@@ -1,14 +1,13 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 
 import { searchCourseKnowledge } from "@/lib/rag/course-knowledge";
 import type { AgentEvent } from "@/lib/schemas/events";
 
 type AgentEventReporter = (event: AgentEvent) => void;
 
-export function createRagTools(
-  reportEvent: AgentEventReporter,
-) {
+export function createRagTools(reportEvent: AgentEventReporter) {
   return {
     searchCourseKnowledge: tool({
       description:
@@ -28,9 +27,7 @@ export function createRagTools(
           .min(1)
           .max(5)
           .default(3)
-          .describe(
-            "The maximum number of relevant passages to retrieve.",
-          ),
+          .describe("The maximum number of relevant passages to retrieve."),
       }),
 
       execute: async ({ query, limit }) => {
@@ -41,17 +38,13 @@ export function createRagTools(
         });
 
         try {
-          const passages = await searchCourseKnowledge(
-            query,
-            limit,
-          );
+          const passages = await searchCourseKnowledge(query, limit);
 
           if (passages.length === 0) {
             reportEvent({
               type: "tool-result",
               toolName: "searchCourseKnowledge",
-              summary:
-                "No relevant course passages were found.",
+              summary: "No relevant course passages were found.",
             });
 
             return {
@@ -72,6 +65,24 @@ export function createRagTools(
             toolName: "searchCourseKnowledge",
             summary: `Found ${passages.length} relevant passages from ${uniqueSourceCount} source document${uniqueSourceCount === 1 ? "" : "s"}.`,
           });
+          
+          reportEvent({
+            type: "experience",
+            block: {
+              id: `sources-${randomUUID()}`,
+              kind: "sources",
+              sources: passages.map((passage) => ({
+                citationId: passage.citationId,
+                title: passage.title,
+                source: passage.source,
+                category: passage.category,
+                excerpt: passage.content
+                  .replace(/\s+/g, " ")
+                  .trim()
+                  .slice(0, 180),
+              })),
+            },
+          });
 
           return {
             found: true,
@@ -81,10 +92,7 @@ export function createRagTools(
             passages,
           };
         } catch (error) {
-          console.error(
-            "Course knowledge retrieval failed:",
-            error,
-          );
+          console.error("Course knowledge retrieval failed:", error);
 
           reportEvent({
             type: "tool-result",
@@ -96,8 +104,7 @@ export function createRagTools(
             found: false,
             query,
             passages: [],
-            message:
-              "The course knowledge service is temporarily unavailable.",
+            message: "The course knowledge service is temporarily unavailable.",
           };
         }
       },

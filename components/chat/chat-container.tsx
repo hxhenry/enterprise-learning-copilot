@@ -6,8 +6,10 @@ import { MessageComposer } from "@/components/chat/message-composer";
 import { MessageList } from "@/components/chat/message-list";
 import {
   isAgentEvent,
+  type AgentActivityStatus,
   type AgentEvent,
   type ChatMessage,
+  type ExperienceBlock,
 } from "@/lib/schemas/events";
 
 const initialMessages: ChatMessage[] = [
@@ -30,20 +32,152 @@ export function ChatContainer() {
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  function updateMessage(
+    messageId: string,
+    updater: (message: ChatMessage) => ChatMessage,
+  ) {
+    setMessages((currentMessages) =>
+      currentMessages.map((message) =>
+        message.id === messageId ? updater(message) : message,
+      ),
+    );
+  }
+
   function updateAssistantMessage(
     assistantMessageId: string,
     updater: (currentContent: string) => string,
   ) {
-    setMessages((currentMessages) =>
-      currentMessages.map((message) =>
-        message.id === assistantMessageId
+    updateMessage(assistantMessageId, (message) => ({
+      ...message,
+      content: updater(message.content),
+    }));
+  }
+
+  function addSelectedAgentActivity(
+    assistantMessageId: string,
+    event: Extract<AgentEvent, { type: "agent-selected" }>,
+  ) {
+    updateMessage(assistantMessageId, (message) => {
+      const currentActivities = message.activities ?? [];
+
+      return {
+        ...message,
+        activities: [
+          ...currentActivities.filter((activity) => activity.kind !== "agent"),
+          {
+            id: `agent-${event.agentId}`,
+            kind: "agent",
+            name: event.agentName,
+            detail: event.reason,
+            status: "completed",
+          },
+        ],
+      };
+    });
+  }
+
+  function startToolActivity(
+    assistantMessageId: string,
+    toolName: string,
+    detail: string,
+  ) {
+    updateMessage(assistantMessageId, (message) => ({
+      ...message,
+      activities: [
+        ...(message.activities ?? []),
+        {
+          id: crypto.randomUUID(),
+          kind: "tool",
+          name: toolName,
+          detail,
+          status: "running",
+        },
+      ],
+    }));
+  }
+
+  function completeToolActivity(
+    assistantMessageId: string,
+    toolName: string,
+    detail: string,
+  ) {
+    updateMessage(assistantMessageId, (message) => {
+      const activities = [...(message.activities ?? [])];
+
+      let matchingIndex = -1;
+
+      for (let index = activities.length - 1; index >= 0; index -= 1) {
+        const activity = activities[index];
+
+        if (
+          activity.kind === "tool" &&
+          activity.name === toolName &&
+          activity.status === "running"
+        ) {
+          matchingIndex = index;
+          break;
+        }
+      }
+
+      if (matchingIndex === -1) {
+        activities.push({
+          id: crypto.randomUUID(),
+          kind: "tool",
+          name: toolName,
+          detail,
+          status: "completed",
+        });
+      } else {
+        activities[matchingIndex] = {
+          ...activities[matchingIndex],
+          detail,
+          status: "completed",
+        };
+      }
+
+      return {
+        ...message,
+        activities,
+      };
+    });
+  }
+
+  function addExperienceBlock(
+    assistantMessageId: string,
+    block: ExperienceBlock,
+  ) {
+    updateMessage(assistantMessageId, (message) => {
+      const existingBlocks = message.experienceBlocks ?? [];
+
+      return {
+        ...message,
+        experienceBlocks: [
+          ...existingBlocks.filter(
+            (existingBlock) => existingBlock.id !== block.id,
+          ),
+          block,
+        ],
+      };
+    });
+  }
+
+  function markRunningActivities(
+    assistantMessageId: string,
+    status: Extract<AgentActivityStatus, "failed" | "stopped">,
+    detail: string,
+  ) {
+    updateMessage(assistantMessageId, (message) => ({
+      ...message,
+      activities: (message.activities ?? []).map((activity) =>
+        activity.status === "running"
           ? {
-              ...message,
-              content: updater(message.content),
+              ...activity,
+              status,
+              detail,
             }
-          : message,
+          : activity,
       ),
-    );
+    }));
   }
 
   function handleAgentEvent(event: AgentEvent, assistantMessageId: string) {
@@ -54,14 +188,24 @@ export function ChatContainer() {
 
       case "agent-selected":
         setStatus(`${event.agentName} selected: ${event.reason}`);
+
+        addSelectedAgentActivity(assistantMessageId, event);
         break;
 
       case "tool-start":
         setStatus(event.message);
+
+        startToolActivity(assistantMessageId, event.toolName, event.message);
         break;
 
       case "tool-result":
         setStatus(event.summary);
+
+        completeToolActivity(assistantMessageId, event.toolName, event.summary);
+        break;
+
+      case "experience":
+        addExperienceBlock(assistantMessageId, event.block);
         break;
 
       case "token":
@@ -143,6 +287,8 @@ export function ChatContainer() {
       id: crypto.randomUUID(),
       role: "assistant",
       content: "",
+      activities: [],
+      experienceBlocks: [],
     };
 
     setMessages((currentMessages) => [
@@ -191,6 +337,12 @@ export function ChatContainer() {
             currentContent || "Response generation was stopped.",
         );
 
+        markRunningActivities(
+          assistantMessage.id,
+          "stopped",
+          "Generation was stopped by the user.",
+        );
+
         setStatus("Generation stopped.");
       } else {
         const errorMessage =
@@ -203,6 +355,8 @@ export function ChatContainer() {
             ? `${currentContent}\n\nError: ${errorMessage}`
             : `Error: ${errorMessage}`,
         );
+
+        markRunningActivities(assistantMessage.id, "failed", errorMessage);
 
         setStatus(null);
       }
@@ -225,7 +379,7 @@ export function ChatContainer() {
             <h2 className="font-semibold text-slate-900">Learning Copilot</h2>
 
             <p className="text-sm text-slate-500">
-              LangGraph multi-agent learning platform
+              Structured LangGraph multi-agent experience
             </p>
           </div>
 

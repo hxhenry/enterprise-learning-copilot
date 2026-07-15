@@ -1,8 +1,4 @@
-export const AGENT_IDS = [
-  "tutor",
-  "certification",
-  "analytics",
-] as const;
+export const AGENT_IDS = ["tutor", "certification", "analytics"] as const;
 
 export type AgentId = (typeof AGENT_IDS)[number];
 
@@ -15,10 +11,7 @@ export type AgentDefinition = {
   enabled: boolean;
 };
 
-export const AGENT_REGISTRY: Record<
-  AgentId,
-  AgentDefinition
-> = {
+export const AGENT_REGISTRY: Record<AgentId, AgentDefinition> = {
   tutor: {
     id: "tutor",
     name: "Course Tutor Agent",
@@ -48,6 +41,7 @@ export const AGENT_REGISTRY: Record<
     toolNames: [
       "getUserProfile",
       "getCompletedCourses",
+      "getCertificationProgress",
       "getCertificationRequirements",
       "getCertificationCourses",
       "searchCourseKnowledge",
@@ -72,9 +66,7 @@ export const AGENT_REGISTRY: Record<
 };
 
 export function getEnabledAgents(): AgentDefinition[] {
-  return Object.values(AGENT_REGISTRY).filter(
-    (agent) => agent.enabled,
-  );
+  return Object.values(AGENT_REGISTRY).filter((agent) => agent.enabled);
 }
 
 export function getAgentCatalogForPrompt(): string {

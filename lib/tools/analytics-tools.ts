@@ -6,9 +6,7 @@ import type { AgentEvent } from "@/lib/schemas/events";
 
 type AgentEventReporter = (event: AgentEvent) => void;
 
-export function createAnalyticsTools(
-  reportEvent: AgentEventReporter,
-) {
+export function createAnalyticsTools(reportEvent: AgentEventReporter) {
   return {
     getDepartmentCertificationStats: tool({
       description:
@@ -32,15 +30,13 @@ export function createAnalyticsTools(
             : "Loading certification analytics for all departments...",
         });
 
-        const statistics =
-          getCertificationStats(department);
+        const statistics = getCertificationStats(department);
 
         if (statistics.length === 0) {
           reportEvent({
             type: "tool-result",
             toolName: "getDepartmentCertificationStats",
-            summary:
-              "No matching department analytics were found.",
+            summary: "No matching department analytics were found.",
           });
 
           return {
@@ -56,12 +52,36 @@ export function createAnalyticsTools(
           (statistic) => statistic.atRisk,
         );
 
+        const highestRiskDepartment =
+          [...statistics].sort((left, right) => {
+            if (left.completionRate !== right.completionRate) {
+              return left.completionRate - right.completionRate;
+            }
+
+            return right.overdue - left.overdue;
+          })[0]?.department ?? null;
+
         reportEvent({
           type: "tool-result",
           toolName: "getDepartmentCertificationStats",
           summary: `${statistics.length} department record${
             statistics.length === 1 ? "" : "s"
           } loaded. ${atRiskDepartments.length} marked at risk.`,
+        });
+
+        reportEvent({
+          type: "experience",
+          block: {
+            id: `analytics-summary-${
+              department?.trim().toLowerCase() || "all"
+            }`,
+            kind: "analytics-summary",
+            title: department
+              ? `${department} Certification Analytics`
+              : "Department Certification Analytics",
+            statistics,
+            highestRiskDepartment,
+          },
         });
 
         return {
@@ -76,6 +96,4 @@ export function createAnalyticsTools(
   };
 }
 
-export type AnalyticsTools = ReturnType<
-  typeof createAnalyticsTools
->;
+export type AnalyticsTools = ReturnType<typeof createAnalyticsTools>;
