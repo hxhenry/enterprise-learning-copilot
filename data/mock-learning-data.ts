@@ -111,3 +111,46 @@ export function getCoursesByIds(courseIds: string[]): Course[] {
 
   return courses.filter((course) => courseIdSet.has(course.id));
 }
+
+export function findCourse(
+  query: string,
+): Course | undefined {
+  const normalizedQuery = query
+    .trim()
+    .toLowerCase();
+
+  return courses.find(
+    (course) =>
+      course.id.toLowerCase() === normalizedQuery ||
+      course.title
+        .toLowerCase()
+        .includes(normalizedQuery) ||
+      normalizedQuery.includes(
+        course.title.toLowerCase(),
+      ),
+  );
+}
+
+export function getNextRequiredCourse(
+  userId: string,
+  certificationId: string,
+): Course | undefined {
+  const certification =
+    findCertificationById(certificationId);
+
+  if (!certification) {
+    return undefined;
+  }
+
+  const completedCourseIds = new Set(
+    completedCourseIdsByUser[userId] ?? [],
+  );
+
+  const requiredCourses = getCoursesByIds(
+    certification.requiredCourseIds,
+  );
+
+  return requiredCourses.find(
+    (course) => !completedCourseIds.has(course.id),
+  );
+}

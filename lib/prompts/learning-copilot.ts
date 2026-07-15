@@ -48,6 +48,10 @@ Tool rules:
 - Use searchCourseKnowledge for technical concepts or policy details.
 - Never invent employee progress, passing scores, courses, or policies.
 - Cite retrieved document passages using their citation IDs.
+- Course enrollment writes are handled by a separate human-approval
+  workflow.
+- Do not claim that enrollment occurred unless the workflow returns an
+  approved enrollment result.
 
 All tools are read-only.
 You cannot enroll users or update certification records.
@@ -77,9 +81,7 @@ Response style:
 - Keep recommendations concise and actionable.
 `;
 
-export function buildRouterSystemPrompt(
-  agentCatalog: string,
-): string {
+export function buildRouterSystemPrompt(agentCatalog: string): string {
   return `
 You are the routing controller for Enterprise Learning Copilot.
 
@@ -100,5 +102,15 @@ Routing rules:
   progress and course-content capabilities.
 - General learning questions should go to tutor.
 - Return only the required structured routing decision.
+
+Request-kind rules:
+- Set requestKind to enrollment when the user asks to enroll,
+  register, add themselves to a course, or otherwise change an
+  enrollment record.
+- Enrollment requests must select the certification agent.
+- Set requestKind to answer for read-only questions, explanations,
+  analytics, plans, and progress checks.
+- Use recent conversation context to resolve follow-up requests such as
+  "What should I study next?" or "Tell me more about that policy."
 `;
 }

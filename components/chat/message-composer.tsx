@@ -1,6 +1,7 @@
 type MessageComposerProps = {
   input: string;
   isStreaming: boolean;
+  isApprovalPending: boolean;
   onInputChange: (value: string) => void;
   onSubmit: () => void;
   onStop: () => void;
@@ -9,6 +10,7 @@ type MessageComposerProps = {
 export function MessageComposer({
   input,
   isStreaming,
+  isApprovalPending,
   onInputChange,
   onSubmit,
   onStop,
@@ -16,7 +18,7 @@ export function MessageComposer({
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!isStreaming) {
+    if (!isStreaming && !isApprovalPending) {
       onSubmit();
     }
   }
@@ -43,14 +45,18 @@ export function MessageComposer({
             ) {
               event.preventDefault();
 
-              if (!isStreaming) {
+              if (!isStreaming && !isApprovalPending) {
                 onSubmit();
               }
             }
           }}
-          placeholder="Ask about a course or certification..."
+          placeholder={
+            isApprovalPending
+              ? "Approve or reject the pending action first."
+              : "Ask about a course or certification..."
+          }
           rows={1}
-          disabled={isStreaming}
+          disabled={isStreaming || isApprovalPending}
           className="min-h-12 flex-1 resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100"
         />
 
@@ -65,7 +71,7 @@ export function MessageComposer({
         ) : (
           <button
             type="submit"
-            disabled={!input.trim()}
+            disabled={!input.trim() || isApprovalPending}
             className="h-12 rounded-xl bg-blue-600 px-5 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
           >
             Send
@@ -74,7 +80,9 @@ export function MessageComposer({
       </div>
 
       <p className="mx-auto mt-2 max-w-4xl text-xs text-slate-400">
-        Press Enter to send. Press Shift + Enter for a new line.
+        {isApprovalPending
+          ? "Resolve the pending approval before starting another request."
+          : "Press Enter to send. Press Shift + Enter for a new line."}
       </p>
     </form>
   );

@@ -1,6 +1,4 @@
-import type {
-  OpenAILanguageModelResponsesOptions,
-} from "@ai-sdk/openai";
+import type { OpenAILanguageModelResponsesOptions } from "@ai-sdk/openai";
 import { generateText, Output } from "ai";
 import { z } from "zod";
 
@@ -11,41 +9,54 @@ import {
 } from "@/lib/agents/registry";
 import { getLearningModel } from "@/lib/ai/model";
 import { buildRouterSystemPrompt } from "@/lib/prompts/learning-copilot";
+import type { ConversationTurn } from "@/lib/agents/state";
 
 const RouterDecisionSchema = z.object({
   agentId: z.enum(AGENT_IDS),
+
+  requestKind: z.enum(["answer", "enrollment"]),
 
   reason: z
     .string()
     .min(1)
     .max(200)
-    .describe(
-      "A short user-safe reason for selecting this agent.",
-    ),
+    .describe("A short user-safe reason for selecting this route."),
 });
 
 export type RouterDecision = {
   agentId: AgentId;
+  requestKind: "answer" | "enrollment";
   reason: string;
 };
 
 export async function routeLearningRequest(
   userMessage: string,
+  conversation: ConversationTurn[],
   abortSignal: AbortSignal,
 ): Promise<RouterDecision> {
+  const previousConversation = conversation
+    .slice(0, -1)
+    .slice(-6)
+    .map((turn) => `${turn.role.toUpperCase()}: ${turn.content}`)
+    .join("\n");
+
   const { output } = await generateText({
     model: getLearningModel(),
 
-    system: buildRouterSystemPrompt(
-      getAgentCatalogForPrompt(),
-    ),
+    system: buildRouterSystemPrompt(getAgentCatalogForPrompt()),
 
-    prompt: userMessage,
+    prompt: `
+Recent conversation:
+${previousConversation || "No previous conversation."}
+
+Current user request:
+${userMessage}
+`,
 
     output: Output.object({
       name: "LearningAgentRoute",
       description:
-        "The specialized learning-platform agent selected for the request.",
+        "The specialized learning-platform route selected for the request.",
       schema: RouterDecisionSchema,
     }),
 

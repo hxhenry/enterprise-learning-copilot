@@ -17,6 +17,17 @@ export type DepartmentExperienceStat = {
   atRisk: boolean;
 };
 
+export type ApprovalRequest = {
+  actionId: string;
+  actionType: "course-enrollment";
+  title: string;
+  description: string;
+  userId: string;
+  courseId: string;
+  courseTitle: string;
+  risk: string;
+};
+
 export type SourceExperienceItem = {
   citationId: string;
   title: string;
@@ -104,6 +115,16 @@ export type AgentEvent =
       type: "done";
     }
   | {
+      type: "approval-required";
+      request: ApprovalRequest;
+    }
+  | {
+      type: "approval-resolved";
+      actionId: string;
+      approved: boolean;
+      message: string;
+    }
+  | {
       type: "error";
       message: string;
     };
@@ -116,9 +137,24 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function isCourseExperienceItem(
-  value: unknown,
-): value is CourseExperienceItem {
+export function isApprovalRequest(value: unknown): value is ApprovalRequest {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    typeof value.actionId === "string" &&
+    value.actionType === "course-enrollment" &&
+    typeof value.title === "string" &&
+    typeof value.description === "string" &&
+    typeof value.userId === "string" &&
+    typeof value.courseId === "string" &&
+    typeof value.courseTitle === "string" &&
+    typeof value.risk === "string"
+  );
+}
+
+function isCourseExperienceItem(value: unknown): value is CourseExperienceItem {
   if (!isRecord(value)) {
     return false;
   }
@@ -151,9 +187,7 @@ function isDepartmentExperienceStat(
   );
 }
 
-function isSourceExperienceItem(
-  value: unknown,
-): value is SourceExperienceItem {
+function isSourceExperienceItem(value: unknown): value is SourceExperienceItem {
   if (!isRecord(value)) {
     return false;
   }
@@ -167,9 +201,7 @@ function isSourceExperienceItem(
   );
 }
 
-export function isExperienceBlock(
-  value: unknown,
-): value is ExperienceBlock {
+export function isExperienceBlock(value: unknown): value is ExperienceBlock {
   if (!isRecord(value) || typeof value.id !== "string") {
     return false;
   }
@@ -216,6 +248,16 @@ export function isAgentEvent(value: unknown): value is AgentEvent {
     case "status":
       return typeof value.message === "string";
 
+    case "approval-required":
+      return isApprovalRequest(value.request);
+
+    case "approval-resolved":
+      return (
+        typeof value.actionId === "string" &&
+        typeof value.approved === "boolean" &&
+        typeof value.message === "string"
+      );
+
     case "agent-selected":
       return (
         typeof value.agentId === "string" &&
@@ -225,14 +267,12 @@ export function isAgentEvent(value: unknown): value is AgentEvent {
 
     case "tool-start":
       return (
-        typeof value.toolName === "string" &&
-        typeof value.message === "string"
+        typeof value.toolName === "string" && typeof value.message === "string"
       );
 
     case "tool-result":
       return (
-        typeof value.toolName === "string" &&
-        typeof value.summary === "string"
+        typeof value.toolName === "string" && typeof value.summary === "string"
       );
 
     case "experience":

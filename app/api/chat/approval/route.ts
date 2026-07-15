@@ -1,21 +1,19 @@
 import {
-  INTERRUPT,
+  Command,
   isInterrupted,
 } from "@langchain/langgraph";
 
 import { createLearningGraph } from "@/lib/agents/graph";
-import {
-  isApprovalRequest,
-  type AgentEvent,
-} from "@/lib/schemas/events";
+import type { AgentEvent } from "@/lib/schemas/events";
 import { getAuthenticatedActor } from "@/lib/security/authorization";
 import { parseSafeIdentifier } from "@/lib/security/request-validation";
 
 export const runtime = "nodejs";
 
-type ChatRequest = {
-  message?: unknown;
+type ApprovalBody = {
   threadId?: unknown;
+  actionId?: unknown;
+  approved?: unknown;
 };
 
 const encoder = new TextEncoder();
@@ -31,11 +29,11 @@ function encodeEvent(
 export async function POST(
   request: Request,
 ): Promise<Response> {
-  let body: ChatRequest;
+  let body: ApprovalBody;
 
   try {
     body =
-      (await request.json()) as ChatRequest;
+      (await request.json()) as ApprovalBody;
   } catch {
     return Response.json(
       {
@@ -48,45 +46,29 @@ export async function POST(
     );
   }
 
-  const message =
-    typeof body.message === "string"
-      ? body.message.trim()
-      : "";
-
   const threadId =
     parseSafeIdentifier(body.threadId);
 
-  if (!message) {
-    return Response.json(
-      {
-        error: "Message is required.",
-      },
-      {
-        status: 400,
-      },
-    );
-  }
+  const actionId =
+    parseSafeIdentifier(body.actionId);
 
-  if (!threadId) {
+  const approved =
+    typeof body.approved === "boolean"
+      ? body.approved
+      : null;
+
+  if (
+    !threadId ||
+    !actionId ||
+    approved === null
+  ) {
     return Response.json(
       {
         error:
-          "A valid conversation thread ID is required.",
+          "A valid thread, action, and approval decision are required.",
       },
       {
         status: 400,
-      },
-    );
-  }
-
-  if (!process.env.OPENAI_API_KEY?.trim()) {
-    return Response.json(
-      {
-        error:
-          "The server is missing its OpenAI API configuration.",
-      },
-      {
-        status: 500,
       },
     );
   }
@@ -100,22 +82,20 @@ export async function POST(
 
         const sendEvent = (
           event: AgentEvent,
-        ): boolean => {
+        ) => {
           if (
             isClosed ||
             request.signal.aborted
           ) {
-            return false;
+            return;
           }
 
           try {
             controller.enqueue(
               encodeEvent(event),
             );
-            return true;
           } catch {
             isClosed = true;
-            return false;
           }
         };
 
@@ -129,15 +109,16 @@ export async function POST(
           try {
             controller.close();
           } catch {
-            // The browser may have cancelled.
+            // Stream may already be closed.
           }
         };
 
         try {
           sendEvent({
             type: "status",
-            message:
-              "Starting the persistent LangGraph workflow...",
+            message: approved
+              ? "Applying your approval..."
+              : "Cancelling the requested action...",
           });
 
           const graph =
@@ -152,24 +133,17 @@ export async function POST(
 
           const result =
             await graph.invoke(
-              {
-                userMessage: message,
-
-                conversation: [
-                  {
-                    role: "user",
-                    content: message,
-                  },
-                ],
-
-                selectedAgent: null,
-                routingReason: "",
-                requestKind: "answer",
-                pendingEnrollment: null,
-                approvalStatus:
-                  "not-required",
-                finalAnswer: "",
-              },
+              new Command({
+                resume: {
+                  actionId,
+                  approved,
+                  decidedBy:
+                    actor.userId,
+                  reason: approved
+                    ? "Approved by the user."
+                    : "Rejected by the user.",
+                },
+              }),
               {
                 configurable: {
                   thread_id: threadId,
@@ -183,39 +157,8 @@ export async function POST(
           }
 
           if (isInterrupted(result)) {
-            const pendingInterrupt =
-              result[INTERRUPT][0];
-
-            const approvalRequest =
-              pendingInterrupt?.value;
-
-            if (
-              !isApprovalRequest(
-                approvalRequest,
-              )
-            ) {
-              throw new Error(
-                "The workflow returned an unsupported interrupt.",
-              );
-            }
-
-            sendEvent({
-              type: "approval-required",
-              request: approvalRequest,
-            });
-
-            sendEvent({
-              type: "done",
-            });
-
-            return;
-          }
-
-          if (
-            !result.finalAnswer.trim()
-          ) {
             throw new Error(
-              "The selected workflow returned no final answer.",
+              "The approval workflow did not resume correctly.",
             );
           }
 
@@ -225,14 +168,14 @@ export async function POST(
         } catch (error) {
           if (!request.signal.aborted) {
             console.error(
-              "Learning graph request failed:",
+              "Approval workflow failed:",
               error,
             );
 
             sendEvent({
               type: "error",
               message:
-                "The learning workflow could not complete the request.",
+                "The approval decision could not be applied.",
             });
           }
         } finally {

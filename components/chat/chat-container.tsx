@@ -10,7 +10,14 @@ import {
   type AgentEvent,
   type ChatMessage,
   type ExperienceBlock,
+  type ApprovalRequest,
 } from "@/lib/schemas/events";
+import { ApprovalRequestCard } from "@/components/learning/approval-request-card";
+
+type PendingApproval = {
+  assistantMessageId: string;
+  request: ApprovalRequest;
+};
 
 const initialMessages: ChatMessage[] = [
   {
@@ -29,8 +36,32 @@ export function ChatContainer() {
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(
     null,
   );
+  const [pendingApproval, setPendingApproval] =
+    useState<PendingApproval | null>(null);
+
+  const [approvalInFlight, setApprovalInFlight] = useState(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  const threadIdRef = useRef<string | null>(null);
+
+  function getThreadId(): string {
+    if (threadIdRef.current) {
+      return threadIdRef.current;
+    }
+
+    const storageKey = "enterprise-learning-thread-id";
+
+    const storedThreadId = window.sessionStorage.getItem(storageKey);
+
+    const threadId = storedThreadId ?? crypto.randomUUID();
+
+    window.sessionStorage.setItem(storageKey, threadId);
+
+    threadIdRef.current = threadId;
+
+    return threadId;
+  }
 
   function updateMessage(
     messageId: string,
@@ -191,7 +222,29 @@ export function ChatContainer() {
 
         addSelectedAgentActivity(assistantMessageId, event);
         break;
+      case "approval-required":
+        setPendingApproval({
+          assistantMessageId,
+          request: event.request,
+        });
 
+        updateAssistantMessage(
+          assistantMessageId,
+          (currentContent) =>
+            currentContent ||
+            `Approval is required before enrolling you in ${event.request.courseTitle}.`,
+        );
+
+        setStatus(null);
+        break;
+
+      case "approval-resolved":
+        setPendingApproval((current) =>
+          current?.request.actionId === event.actionId ? null : current,
+        );
+
+        setStatus(event.message);
+        break;
       case "tool-start":
         setStatus(event.message);
 
@@ -269,11 +322,76 @@ export function ChatContainer() {
       }
     }
   }
+  async function handleApprovalDecision(approved: boolean) {
+    if (!pendingApproval || approvalInFlight) {
+      return;
+    }
 
+    const { assistantMessageId, request: approvalRequest } = pendingApproval;
+
+    setApprovalInFlight(true);
+    setIsStreaming(true);
+    setStreamingMessageId(assistantMessageId);
+
+    setStatus(approved ? "Submitting approval..." : "Rejecting the action...");
+
+    const abortController = new AbortController();
+
+    abortControllerRef.current = abortController;
+
+    try {
+      const response = await fetch("/api/chat/approval", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          threadId: getThreadId(),
+          actionId: approvalRequest.actionId,
+          approved,
+        }),
+        signal: abortController.signal,
+      });
+
+      if (!response.ok) {
+        const responseBody = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+
+        throw new Error(
+          responseBody?.error ??
+            `The approval request failed with status ${response.status}.`,
+        );
+      }
+
+      await processStream(response, assistantMessageId);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setStatus("Approval processing was stopped.");
+      } else {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "An unexpected approval error occurred.";
+
+        updateAssistantMessage(
+          assistantMessageId,
+          (currentContent) => `${currentContent}\n\nError: ${errorMessage}`,
+        );
+
+        setStatus(null);
+      }
+    } finally {
+      abortControllerRef.current = null;
+      setApprovalInFlight(false);
+      setIsStreaming(false);
+      setStreamingMessageId(null);
+    }
+  }
   async function handleSubmit() {
     const messageText = input.trim();
 
-    if (!messageText || isStreaming) {
+    if (!messageText || isStreaming || pendingApproval) {
       return;
     }
 
@@ -313,6 +431,7 @@ export function ChatContainer() {
         },
         body: JSON.stringify({
           message: messageText,
+          threadId: getThreadId(),
         }),
         signal: abortController.signal,
       });
@@ -395,9 +514,22 @@ export function ChatContainer() {
         status={status}
       />
 
+      {pendingApproval ? (
+        <div className="border-t border-slate-200 bg-white px-4 py-4 md:px-8">
+          <div className="mx-auto max-w-4xl">
+            <ApprovalRequestCard
+              request={pendingApproval.request}
+              isSubmitting={approvalInFlight}
+              onDecision={handleApprovalDecision}
+            />
+          </div>
+        </div>
+      ) : null}
+
       <MessageComposer
         input={input}
         isStreaming={isStreaming}
+        isApprovalPending={pendingApproval !== null}
         onInputChange={setInput}
         onSubmit={handleSubmit}
         onStop={handleStop}
