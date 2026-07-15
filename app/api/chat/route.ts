@@ -1,12 +1,11 @@
-import type {
-  OpenAILanguageModelResponsesOptions,
-} from "@ai-sdk/openai";
+import type { OpenAILanguageModelResponsesOptions } from "@ai-sdk/openai";
 import { stepCountIs, streamText } from "ai";
 
 import { getLearningModel } from "@/lib/ai/model";
 import { LEARNING_COPILOT_SYSTEM_PROMPT } from "@/lib/prompts/learning-copilot";
 import type { AgentEvent } from "@/lib/schemas/events";
 import { createCertificationTools } from "@/lib/tools/certification-tools";
+import { createRagTools } from "@/lib/tools/rag-tools";
 
 export const runtime = "nodejs";
 
@@ -36,8 +35,7 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  const message =
-    typeof body.message === "string" ? body.message.trim() : "";
+  const message = typeof body.message === "string" ? body.message.trim() : "";
 
   if (!message) {
     return Response.json(
@@ -53,8 +51,7 @@ export async function POST(request: Request): Promise<Response> {
   if (!process.env.OPENAI_API_KEY?.trim()) {
     return Response.json(
       {
-        error:
-          "The server is missing its OpenAI API configuration.",
+        error: "The server is missing its OpenAI API configuration.",
       },
       {
         status: 500,
@@ -101,61 +98,64 @@ export async function POST(request: Request): Promise<Response> {
           message: "Connecting to the learning model...",
         });
 
-        const certificationTools = createCertificationTools((event) => {
-  sendEvent(event);
-});
+        const reportEvent = (event: AgentEvent) => {
+          sendEvent(event);
+        };
 
-const result = streamText({
-  model: getLearningModel(),
+        const tools = {
+          ...createCertificationTools(reportEvent),
+          ...createRagTools(reportEvent),
+        };
 
-  system: LEARNING_COPILOT_SYSTEM_PROMPT,
+        const result = streamText({
+          model: getLearningModel(),
 
-  prompt: message,
+          system: LEARNING_COPILOT_SYSTEM_PROMPT,
 
-  tools: certificationTools,
+          prompt: message,
 
-  stopWhen: stepCountIs(6),
+          tools,
 
-  maxOutputTokens: 900,
+          stopWhen: stepCountIs(6),
 
-  abortSignal: request.signal,
+          maxOutputTokens: 900,
 
-  timeout: {
-    totalMs: 90_000,
-    chunkMs: 30_000,
-  },
+          abortSignal: request.signal,
 
-  providerOptions: {
-    openai: {
-      store: false,
-    } satisfies OpenAILanguageModelResponsesOptions,
-  },
+          timeout: {
+            totalMs: 90_000,
+            chunkMs: 30_000,
+          },
 
-  onStepFinish({
-    stepNumber,
-    finishReason,
-    toolCalls,
-    toolResults,
-    usage,
-  }) {
-    console.info("Learning agent step completed", {
-      stepNumber,
-      finishReason,
-      toolNames: toolCalls.map(
-        (toolCall) => toolCall.toolName,
-      ),
-      toolResultCount: toolResults.length,
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-    });
-  },
+          providerOptions: {
+            openai: {
+              store: false,
+            } satisfies OpenAILanguageModelResponsesOptions,
+          },
 
-  onError({ error }) {
-    providerError = error;
+          onStepFinish({
+            stepNumber,
+            finishReason,
+            toolCalls,
+            toolResults,
+            usage,
+          }) {
+            console.info("Learning agent step completed", {
+              stepNumber,
+              finishReason,
+              toolNames: toolCalls.map((toolCall) => toolCall.toolName),
+              toolResultCount: toolResults.length,
+              inputTokens: usage.inputTokens,
+              outputTokens: usage.outputTokens,
+            });
+          },
 
-    console.error("AI SDK streaming error:", error);
-  },
-});
+          onError({ error }) {
+            providerError = error;
+
+            console.error("AI SDK streaming error:", error);
+          },
+        });
 
         sendEvent({
           type: "status",
