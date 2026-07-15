@@ -12,6 +12,16 @@ export type AgentEvent =
       message: string;
     }
   | {
+      type: "tool-start";
+      toolName: string;
+      message: string;
+    }
+  | {
+      type: "tool-result";
+      toolName: string;
+      summary: string;
+    }
+  | {
       type: "token";
       content: string;
     }
@@ -33,6 +43,18 @@ export function isAgentEvent(value: unknown): value is AgentEvent {
   switch (event.type) {
     case "status":
       return typeof event.message === "string";
+
+    case "tool-start":
+      return (
+        typeof event.toolName === "string" &&
+        typeof event.message === "string"
+      );
+
+    case "tool-result":
+      return (
+        typeof event.toolName === "string" &&
+        typeof event.summary === "string"
+      );
 
     case "token":
       return typeof event.content === "string";

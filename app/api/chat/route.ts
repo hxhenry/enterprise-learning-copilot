@@ -1,11 +1,12 @@
-import {
-  type OpenAILanguageModelResponsesOptions,
+import type {
+  OpenAILanguageModelResponsesOptions,
 } from "@ai-sdk/openai";
-import { streamText } from "ai";
+import { stepCountIs, streamText } from "ai";
 
 import { getLearningModel } from "@/lib/ai/model";
 import { LEARNING_COPILOT_SYSTEM_PROMPT } from "@/lib/prompts/learning-copilot";
 import type { AgentEvent } from "@/lib/schemas/events";
+import { createCertificationTools } from "@/lib/tools/certification-tools";
 
 export const runtime = "nodejs";
 
@@ -100,32 +101,61 @@ export async function POST(request: Request): Promise<Response> {
           message: "Connecting to the learning model...",
         });
 
-        const result = streamText({
-          model: getLearningModel(),
-          system: LEARNING_COPILOT_SYSTEM_PROMPT,
-          prompt: message,
+        const certificationTools = createCertificationTools((event) => {
+  sendEvent(event);
+});
 
-          maxOutputTokens: 700,
+const result = streamText({
+  model: getLearningModel(),
 
-          abortSignal: request.signal,
+  system: LEARNING_COPILOT_SYSTEM_PROMPT,
 
-          timeout: {
-            totalMs: 60_000,
-            chunkMs: 20_000,
-          },
+  prompt: message,
 
-          providerOptions: {
-            openai: {
-              store: false,
-            } satisfies OpenAILanguageModelResponsesOptions,
-          },
+  tools: certificationTools,
 
-          onError({ error }) {
-            providerError = error;
+  stopWhen: stepCountIs(6),
 
-            console.error("AI SDK streaming error:", error);
-          },
-        });
+  maxOutputTokens: 900,
+
+  abortSignal: request.signal,
+
+  timeout: {
+    totalMs: 90_000,
+    chunkMs: 30_000,
+  },
+
+  providerOptions: {
+    openai: {
+      store: false,
+    } satisfies OpenAILanguageModelResponsesOptions,
+  },
+
+  onStepFinish({
+    stepNumber,
+    finishReason,
+    toolCalls,
+    toolResults,
+    usage,
+  }) {
+    console.info("Learning agent step completed", {
+      stepNumber,
+      finishReason,
+      toolNames: toolCalls.map(
+        (toolCall) => toolCall.toolName,
+      ),
+      toolResultCount: toolResults.length,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+    });
+  },
+
+  onError({ error }) {
+    providerError = error;
+
+    console.error("AI SDK streaming error:", error);
+  },
+});
 
         sendEvent({
           type: "status",

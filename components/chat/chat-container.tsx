@@ -20,14 +20,13 @@ const initialMessages: ChatMessage[] = [
 ];
 
 export function ChatContainer() {
-  const [messages, setMessages] =
-    useState<ChatMessage[]>(initialMessages);
+  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [streamingMessageId, setStreamingMessageId] = useState<
-    string | null
-  >(null);
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(
+    null,
+  );
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -47,13 +46,18 @@ export function ChatContainer() {
     );
   }
 
-  function handleAgentEvent(
-    event: AgentEvent,
-    assistantMessageId: string,
-  ) {
+  function handleAgentEvent(event: AgentEvent, assistantMessageId: string) {
     switch (event.type) {
       case "status":
         setStatus(event.message);
+        break;
+
+      case "tool-start":
+        setStatus(event.message);
+        break;
+
+      case "tool-result":
+        setStatus(event.summary);
         break;
 
       case "token":
@@ -72,10 +76,7 @@ export function ChatContainer() {
     }
   }
 
-  async function processStream(
-    response: Response,
-    assistantMessageId: string,
-  ) {
+  async function processStream(response: Response, assistantMessageId: string) {
     if (!response.body) {
       throw new Error("The server did not return a response stream.");
     }
@@ -167,11 +168,9 @@ export function ChatContainer() {
       });
 
       if (!response.ok) {
-        const responseBody = (await response.json().catch(() => null)) as
-          | {
-              error?: string;
-            }
-          | null;
+        const responseBody = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
 
         throw new Error(
           responseBody?.error ??
@@ -195,12 +194,10 @@ export function ChatContainer() {
             ? error.message
             : "An unexpected error occurred.";
 
-        updateAssistantMessage(
-          assistantMessage.id,
-          (currentContent) =>
-            currentContent
-              ? `${currentContent}\n\nError: ${errorMessage}`
-              : `Error: ${errorMessage}`,
+        updateAssistantMessage(assistantMessage.id, (currentContent) =>
+          currentContent
+            ? `${currentContent}\n\nError: ${errorMessage}`
+            : `Error: ${errorMessage}`,
         );
 
         setStatus(null);
@@ -221,9 +218,7 @@ export function ChatContainer() {
       <header className="border-b border-slate-200 bg-white px-6 py-4">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h2 className="font-semibold text-slate-900">
-              Learning Copilot
-            </h2>
+            <h2 className="font-semibold text-slate-900">Learning Copilot</h2>
 
             <p className="text-sm text-slate-500">
               AI-powered learning assistant
