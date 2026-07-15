@@ -8,20 +8,16 @@ import {
   type ConditionalEdgeRouter,
 } from "@langchain/langgraph";
 
-import {
-  completedCourseIdsByUser,
-  findCourse,
-  getNextRequiredCourse,
-} from "@/data/mock-learning-data";
+import { completedCourseIdsByUser } from "@/data/mock-learning-data";
 import { createCourseEnrollment } from "@/data/mock-enrollment-data";
 import { learningGraphCheckpointer } from "@/lib/agents/checkpointer";
 import { AGENT_REGISTRY, type AgentId } from "@/lib/agents/registry";
 import { routeLearningRequest } from "@/lib/agents/router";
 import { runStreamingAgent } from "@/lib/agents/run-streaming-agent";
-import {
-  LearningGraphState,
-  type LearningGraphStateValue,
-} from "@/lib/agents/state";
+import { LearningGraphState } from "@/lib/agents/state";
+import { performance } from "node:perf_hooks";
+import { logInfo } from "@/lib/observability/logger";
+import type { RunContext } from "@/lib/observability/run-context";
 import {
   ANALYTICS_AGENT_PROMPT,
   CERTIFICATION_AGENT_PROMPT,
@@ -35,6 +31,7 @@ import {
 import { createAnalyticsTools } from "@/lib/tools/analytics-tools";
 import { createCertificationTools } from "@/lib/tools/certification-tools";
 import { createRagTools } from "@/lib/tools/rag-tools";
+import { resolveRequestedCourse } from "@/lib/agents/course-resolution";
 
 type AgentEventReporter = (event: AgentEvent) => void;
 
@@ -42,6 +39,7 @@ type CreateLearningGraphOptions = {
   reportEvent: AgentEventReporter;
   abortSignal: AbortSignal;
   actor: AuthenticatedActor;
+  runContext: RunContext;
 };
 
 type RouterDestination = AgentId | "prepareEnrollment";
@@ -68,37 +66,11 @@ function isApprovalResume(value: unknown): value is ApprovalResume {
   );
 }
 
-function resolveRequestedCourse(
-  state: LearningGraphStateValue,
-  actor: AuthenticatedActor,
-) {
-  const normalizedMessage = state.userMessage.toLowerCase();
-
-  const requestsNextCourse =
-    /\bnext(?:\s+(?:required|recommended))?\s+course\b/.test(normalizedMessage);
-
-  if (requestsNextCourse) {
-    return getNextRequiredCourse(actor.userId, "cert-cloud-security");
-  }
-
-  const directMatch = findCourse(state.userMessage);
-
-  if (directMatch) {
-    return directMatch;
-  }
-
-  const recentContext = state.conversation
-    .slice(-6)
-    .map((turn) => turn.content)
-    .join("\n");
-
-  return findCourse(recentContext);
-}
-
 export function createLearningGraph({
   reportEvent,
   abortSignal,
   actor,
+  runContext,
 }: CreateLearningGraphOptions) {
   const routerNode: typeof LearningGraphState.Node = async (state) => {
     reportEvent({
@@ -106,11 +78,19 @@ export function createLearningGraph({
       message: "Selecting the best specialized agent...",
     });
 
+    const routerStartedAt = performance.now();
+
     const decision = await routeLearningRequest(
       state.userMessage,
       state.conversation,
       abortSignal,
     );
+
+    logInfo("router.completed", runContext, {
+      selectedAgent: decision.agentId,
+      requestKind: decision.requestKind,
+      durationMs: Math.round(performance.now() - routerStartedAt),
+    });
 
     const selectedDefinition = AGENT_REGISTRY[decision.agentId];
 
@@ -139,6 +119,7 @@ export function createLearningGraph({
       },
       reportEvent,
       abortSignal,
+      runContext,
     });
 
     return {
@@ -164,6 +145,7 @@ export function createLearningGraph({
       },
       reportEvent,
       abortSignal,
+      runContext,
     });
 
     return {
@@ -188,6 +170,7 @@ export function createLearningGraph({
       },
       reportEvent,
       abortSignal,
+      runContext,
     });
 
     return {
@@ -206,8 +189,11 @@ export function createLearningGraph({
   ) => {
     assertPermission(actor, "enrollment:request");
 
-    const course = resolveRequestedCourse(state, actor);
-
+    const course = resolveRequestedCourse({
+      userMessage: state.userMessage,
+      conversation: state.conversation,
+      userId: actor.userId,
+    });
     if (!course) {
       const answer =
         "I could not identify which course you want to enroll in. Please provide the exact course title.";

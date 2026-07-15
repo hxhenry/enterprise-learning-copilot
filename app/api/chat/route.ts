@@ -1,15 +1,13 @@
-import {
-  INTERRUPT,
-  isInterrupted,
-} from "@langchain/langgraph";
+import { INTERRUPT, isInterrupted } from "@langchain/langgraph";
 
 import { createLearningGraph } from "@/lib/agents/graph";
-import {
-  isApprovalRequest,
-  type AgentEvent,
-} from "@/lib/schemas/events";
+import { isApprovalRequest, type AgentEvent } from "@/lib/schemas/events";
 import { getAuthenticatedActor } from "@/lib/security/authorization";
 import { parseSafeIdentifier } from "@/lib/security/request-validation";
+import { performance } from "node:perf_hooks";
+import { createObservedEventReporter } from "@/lib/observability/event-reporter";
+import { logError, logInfo } from "@/lib/observability/logger";
+import { createRunContext } from "@/lib/observability/run-context";
 
 export const runtime = "nodejs";
 
@@ -20,27 +18,19 @@ type ChatRequest = {
 
 const encoder = new TextEncoder();
 
-function encodeEvent(
-  event: AgentEvent,
-): Uint8Array {
-  return encoder.encode(
-    `data: ${JSON.stringify(event)}\n\n`,
-  );
+function encodeEvent(event: AgentEvent): Uint8Array {
+  return encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
 }
 
-export async function POST(
-  request: Request,
-): Promise<Response> {
+export async function POST(request: Request): Promise<Response> {
   let body: ChatRequest;
 
   try {
-    body =
-      (await request.json()) as ChatRequest;
+    body = (await request.json()) as ChatRequest;
   } catch {
     return Response.json(
       {
-        error:
-          "The request body must be valid JSON.",
+        error: "The request body must be valid JSON.",
       },
       {
         status: 400,
@@ -48,13 +38,9 @@ export async function POST(
     );
   }
 
-  const message =
-    typeof body.message === "string"
-      ? body.message.trim()
-      : "";
+  const message = typeof body.message === "string" ? body.message.trim() : "";
 
-  const threadId =
-    parseSafeIdentifier(body.threadId);
+  const threadId = parseSafeIdentifier(body.threadId);
 
   if (!message) {
     return Response.json(
@@ -70,8 +56,7 @@ export async function POST(
   if (!threadId) {
     return Response.json(
       {
-        error:
-          "A valid conversation thread ID is required.",
+        error: "A valid conversation thread ID is required.",
       },
       {
         status: 400,
@@ -82,8 +67,7 @@ export async function POST(
   if (!process.env.OPENAI_API_KEY?.trim()) {
     return Response.json(
       {
-        error:
-          "The server is missing its OpenAI API configuration.",
+        error: "The server is missing its OpenAI API configuration.",
       },
       {
         status: 500,
@@ -92,162 +76,161 @@ export async function POST(
   }
 
   const actor = getAuthenticatedActor();
+  const runContext = createRunContext({
+    threadId,
+    operation: "chat",
+  });
 
-  const stream =
-    new ReadableStream<Uint8Array>({
-      async start(controller) {
-        let isClosed = false;
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      let isClosed = false;
 
-        const sendEvent = (
-          event: AgentEvent,
-        ): boolean => {
-          if (
-            isClosed ||
-            request.signal.aborted
-          ) {
-            return false;
-          }
-
-          try {
-            controller.enqueue(
-              encodeEvent(event),
-            );
-            return true;
-          } catch {
-            isClosed = true;
-            return false;
-          }
-        };
-
-        const closeStream = () => {
-          if (isClosed) {
-            return;
-          }
-
-          isClosed = true;
-
-          try {
-            controller.close();
-          } catch {
-            // The browser may have cancelled.
-          }
-        };
+      const sendEvent = (event: AgentEvent): boolean => {
+        if (isClosed || request.signal.aborted) {
+          return false;
+        }
 
         try {
-          sendEvent({
-            type: "status",
-            message:
-              "Starting the persistent LangGraph workflow...",
+          controller.enqueue(encodeEvent(event));
+          return true;
+        } catch {
+          isClosed = true;
+          return false;
+        }
+      };
+
+      const closeStream = () => {
+        if (isClosed) {
+          return;
+        }
+
+        isClosed = true;
+
+        try {
+          controller.close();
+        } catch {
+          // The browser may have cancelled.
+        }
+      };
+
+      const startedAt = performance.now();
+
+      const reportEvent = createObservedEventReporter({
+        context: runContext,
+        emit: sendEvent,
+      });
+
+      logInfo("http.request.started", runContext, {
+        route: "/api/chat",
+        method: "POST",
+      });
+
+      try {
+        reportEvent({
+          type: "status",
+          message: "Starting the persistent LangGraph workflow...",
+        });
+
+        const graph = createLearningGraph({
+          reportEvent,
+          abortSignal: request.signal,
+          actor,
+          runContext,
+        });
+
+        const result = await graph.invoke(
+          {
+            userMessage: message,
+
+            conversation: [
+              {
+                role: "user",
+                content: message,
+              },
+            ],
+
+            selectedAgent: null,
+            routingReason: "",
+            requestKind: "answer",
+            pendingEnrollment: null,
+            approvalStatus: "not-required",
+            finalAnswer: "",
+          },
+          {
+            configurable: {
+              thread_id: threadId,
+            },
+            recursionLimit: 12,
+          },
+        );
+
+        if (request.signal.aborted) {
+          return;
+        }
+
+        if (isInterrupted(result)) {
+          const pendingInterrupt = result[INTERRUPT][0];
+          const approvalRequest = pendingInterrupt?.value;
+
+          if (!isApprovalRequest(approvalRequest)) {
+            throw new Error("The workflow returned an unsupported interrupt.");
+          }
+
+          reportEvent({
+            type: "approval-required",
+            request: approvalRequest,
           });
 
-          const graph =
-            createLearningGraph({
-              reportEvent(event) {
-                sendEvent(event);
-              },
-              abortSignal:
-                request.signal,
-              actor,
-            });
-
-          const result =
-            await graph.invoke(
-              {
-                userMessage: message,
-
-                conversation: [
-                  {
-                    role: "user",
-                    content: message,
-                  },
-                ],
-
-                selectedAgent: null,
-                routingReason: "",
-                requestKind: "answer",
-                pendingEnrollment: null,
-                approvalStatus:
-                  "not-required",
-                finalAnswer: "",
-              },
-              {
-                configurable: {
-                  thread_id: threadId,
-                },
-                recursionLimit: 12,
-              },
-            );
-
-          if (request.signal.aborted) {
-            return;
-          }
-
-          if (isInterrupted(result)) {
-            const pendingInterrupt =
-              result[INTERRUPT][0];
-
-            const approvalRequest =
-              pendingInterrupt?.value;
-
-            if (
-              !isApprovalRequest(
-                approvalRequest,
-              )
-            ) {
-              throw new Error(
-                "The workflow returned an unsupported interrupt.",
-              );
-            }
-
-            sendEvent({
-              type: "approval-required",
-              request: approvalRequest,
-            });
-
-            sendEvent({
-              type: "done",
-            });
-
-            return;
-          }
-
-          if (
-            !result.finalAnswer.trim()
-          ) {
-            throw new Error(
-              "The selected workflow returned no final answer.",
-            );
-          }
-
-          sendEvent({
+          reportEvent({
             type: "done",
           });
-        } catch (error) {
-          if (!request.signal.aborted) {
-            console.error(
-              "Learning graph request failed:",
-              error,
-            );
 
-            sendEvent({
-              type: "error",
-              message:
-                "The learning workflow could not complete the request.",
-            });
-          }
-        } finally {
-          closeStream();
+          logInfo("http.request.completed", runContext, {
+            route: "/api/chat",
+            outcome: "interrupted",
+            durationMs: Math.round(performance.now() - startedAt),
+          });
+
+          return;
         }
-      },
-    });
+
+        if (!result.finalAnswer.trim()) {
+          throw new Error("The selected workflow returned no final answer.");
+        }
+
+        reportEvent({
+          type: "done",
+        });
+
+        logInfo("http.request.completed", runContext, {
+          route: "/api/chat",
+          outcome: "completed",
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+      } catch (error) {
+        if (!request.signal.aborted) {
+          logError("http.request.failed", runContext, error, {
+            route: "/api/chat",
+            durationMs: Math.round(performance.now() - startedAt),
+          });
+
+          reportEvent({
+            type: "error",
+            message: "The learning workflow could not complete the request.",
+          });
+        }
+      } finally {
+        closeStream();
+      }
+    },
+  });
 
   return new Response(stream, {
     headers: {
-      "Content-Type":
-        "text/event-stream; charset=utf-8",
-      "Cache-Control":
-        "no-cache, no-transform",
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
       "X-Accel-Buffering": "no",
+      "X-Request-Id": runContext.requestId,
     },
   });
 }

@@ -1,10 +1,14 @@
+import { performance } from "node:perf_hooks";
+
 import type { OpenAILanguageModelResponsesOptions } from "@ai-sdk/openai";
 import { stepCountIs, streamText, type ModelMessage, type ToolSet } from "ai";
 
 import type { AgentId } from "@/lib/agents/registry";
-import { getLearningModel } from "@/lib/ai/model";
-import type { AgentEvent } from "@/lib/schemas/events";
 import type { ConversationTurn } from "@/lib/agents/state";
+import { getLearningModel } from "@/lib/ai/model";
+import { logError, logInfo } from "@/lib/observability/logger";
+import type { RunContext } from "@/lib/observability/run-context";
+import type { AgentEvent } from "@/lib/schemas/events";
 
 type AgentEventReporter = (event: AgentEvent) => void;
 
@@ -16,6 +20,7 @@ type RunStreamingAgentOptions = {
   tools: ToolSet;
   reportEvent: AgentEventReporter;
   abortSignal: AbortSignal;
+  runContext: RunContext;
 };
 
 export async function runStreamingAgent({
@@ -26,8 +31,20 @@ export async function runStreamingAgent({
   tools,
   reportEvent,
   abortSignal,
+  runContext,
 }: RunStreamingAgentOptions): Promise<string> {
   let providerError: unknown = null;
+  let completedStepCount = 0;
+  let receivedFirstToken = false;
+
+  const startedAt = performance.now();
+
+  logInfo("agent.run.started", runContext, {
+    agentId,
+    agentName,
+    conversationTurnCount: conversation.length,
+    availableTools: Object.keys(tools),
+  });
 
   reportEvent({
     type: "status",
@@ -65,24 +82,35 @@ export async function runStreamingAgent({
       } satisfies OpenAILanguageModelResponsesOptions,
     },
 
-    onStepFinish({ stepNumber, finishReason, toolCalls, toolResults, usage }) {
-      console.info("Specialized agent step completed", {
+    onStepFinish({ finishReason, toolCalls, toolResults, usage }) {
+      completedStepCount += 1;
+
+      logInfo("agent.step.completed", runContext, {
         agentId,
-        stepNumber,
+        stepNumber: completedStepCount,
         finishReason,
         toolNames: toolCalls.map((toolCall) => toolCall.toolName),
         toolResultCount: toolResults.length,
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
+        totalTokens: usage.totalTokens,
+      });
+    },
+    onFinish({ finishReason, totalUsage }) {
+      logInfo("agent.model.completed", runContext, {
+        agentId,
+        finishReason,
+        inputTokens: totalUsage.inputTokens,
+        outputTokens: totalUsage.outputTokens,
+        totalTokens: totalUsage.totalTokens,
       });
     },
 
     onError({ error }) {
       providerError = error;
 
-      console.error("Specialized agent stream failed", {
+      logError("agent.model.failed", runContext, error, {
         agentId,
-        error,
       });
     },
   });
@@ -92,6 +120,15 @@ export async function runStreamingAgent({
   for await (const textPart of result.textStream) {
     if (abortSignal.aborted) {
       break;
+    }
+
+    if (!receivedFirstToken) {
+      receivedFirstToken = true;
+
+      logInfo("agent.first_token.received", runContext, {
+        agentId,
+        timeToFirstTokenMs: Math.round(performance.now() - startedAt),
+      });
     }
 
     finalAnswer += textPart;
@@ -113,6 +150,12 @@ export async function runStreamingAgent({
   if (!finalAnswer.trim()) {
     throw new Error(`${agentName} returned no response text.`);
   }
+
+  logInfo("agent.run.completed", runContext, {
+    agentId,
+    durationMs: Math.round(performance.now() - startedAt),
+    outputCharacterCount: finalAnswer.length,
+  });
 
   return finalAnswer;
 }

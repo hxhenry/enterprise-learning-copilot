@@ -34,3 +34,47 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Quality checks
+
+Run automated tests:
+
+```bash
+npm run test
+```
+
+Generate a coverage report:
+
+```bash
+npm run test:coverage
+```
+
+Run linting:
+
+```bash
+npm run lint
+```
+
+Create a production build:
+
+```bash
+npm run build
+```
+
+Run the complete quality gate:
+
+```bash
+npm run check
+```
+
+## Architecture
+
+See [docs/architecture.md](docs/architecture.md) for:
+
+- Current demo architecture
+- Multi-agent workflow design
+- Human approval architecture
+- Production scaling strategy
+- Security controls
+- Observability design
+- Kubernetes and OpenShift deployment considerations
