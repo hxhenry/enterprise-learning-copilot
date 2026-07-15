@@ -1,4 +1,13 @@
+import {
+  type OpenAILanguageModelResponsesOptions,
+} from "@ai-sdk/openai";
+import { streamText } from "ai";
+
+import { getLearningModel } from "@/lib/ai/model";
+import { LEARNING_COPILOT_SYSTEM_PROMPT } from "@/lib/prompts/learning-copilot";
 import type { AgentEvent } from "@/lib/schemas/events";
+
+export const runtime = "nodejs";
 
 type ChatRequest = {
   message?: unknown;
@@ -6,24 +15,8 @@ type ChatRequest = {
 
 const encoder = new TextEncoder();
 
-function sleep(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, milliseconds);
-  });
-}
-
 function encodeEvent(event: AgentEvent): Uint8Array {
   return encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
-}
-
-function createMockResponse(userMessage: string): string {
-  return [
-    `I received your request: "${userMessage}".`,
-    "",
-    "This response is currently coming from our mock agent workflow.",
-    "In the next milestone, a LangGraph router will select a specialized",
-    "Tutor Agent, Certification Agent, or Business Analytics Agent.",
-  ].join(" ");
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -56,71 +49,135 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
+  if (!process.env.OPENAI_API_KEY?.trim()) {
+    return Response.json(
+      {
+        error:
+          "The server is missing its OpenAI API configuration.",
+      },
+      {
+        status: 500,
+      },
+    );
+  }
+
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const sendEvent = (event: AgentEvent) => {
-        if (!request.signal.aborted) {
+      let isClosed = false;
+      let providerError: unknown = null;
+
+      const sendEvent = (event: AgentEvent): boolean => {
+        if (isClosed || request.signal.aborted) {
+          return false;
+        }
+
+        try {
           controller.enqueue(encodeEvent(event));
+          return true;
+        } catch {
+          isClosed = true;
+          return false;
+        }
+      };
+
+      const closeStream = () => {
+        if (isClosed) {
+          return;
+        }
+
+        isClosed = true;
+
+        try {
+          controller.close();
+        } catch {
+          // The browser may already have cancelled the stream.
         }
       };
 
       try {
         sendEvent({
           type: "status",
-          message: "Understanding your request...",
+          message: "Connecting to the learning model...",
         });
 
-        await sleep(500);
+        const result = streamText({
+          model: getLearningModel(),
+          system: LEARNING_COPILOT_SYSTEM_PROMPT,
+          prompt: message,
+
+          maxOutputTokens: 700,
+
+          abortSignal: request.signal,
+
+          timeout: {
+            totalMs: 60_000,
+            chunkMs: 20_000,
+          },
+
+          providerOptions: {
+            openai: {
+              store: false,
+            } satisfies OpenAILanguageModelResponsesOptions,
+          },
+
+          onError({ error }) {
+            providerError = error;
+
+            console.error("AI SDK streaming error:", error);
+          },
+        });
 
         sendEvent({
           type: "status",
-          message: "Selecting the correct agent...",
+          message: "Generating a response...",
         });
 
-        await sleep(500);
+        let receivedText = false;
 
-        sendEvent({
-          type: "status",
-          message: "Generating response...",
-        });
-
-        const responseText = createMockResponse(message);
-        const responseChunks = responseText.split(/(\s+)/).filter(Boolean);
-
-        for (const chunk of responseChunks) {
+        for await (const textPart of result.textStream) {
           if (request.signal.aborted) {
             break;
           }
 
-          sendEvent({
+          receivedText = true;
+
+          const sent = sendEvent({
             type: "token",
-            content: chunk,
+            content: textPart,
           });
 
-          await sleep(35);
+          if (!sent) {
+            break;
+          }
         }
 
-        if (!request.signal.aborted) {
-          sendEvent({
-            type: "done",
-          });
+        if (request.signal.aborted) {
+          return;
         }
+
+        if (providerError) {
+          throw providerError;
+        }
+
+        if (!receivedText) {
+          throw new Error("The model returned no text.");
+        }
+
+        sendEvent({
+          type: "done",
+        });
       } catch (error) {
         if (!request.signal.aborted) {
+          console.error("Learning model request failed:", error);
+
           sendEvent({
             type: "error",
             message:
-              error instanceof Error
-                ? error.message
-                : "An unexpected streaming error occurred.",
+              "The learning model could not complete the request. Check the server logs and API configuration.",
           });
         }
       } finally {
-        try {
-          controller.close();
-        } catch {
-          // The browser may have already cancelled the stream.
-        }
+        closeStream();
       }
     },
   });

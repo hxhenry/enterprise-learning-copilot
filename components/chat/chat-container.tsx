@@ -15,7 +15,7 @@ const initialMessages: ChatMessage[] = [
     id: "welcome-message",
     role: "assistant",
     content:
-      "Welcome to Enterprise Learning Copilot. Ask me about a course, learning path, or certification.",
+      "Welcome to Enterprise Learning Copilot. Ask me about technical concepts, learning plans, or certification preparation.",
   },
 ];
 
@@ -226,7 +226,7 @@ export function ChatContainer() {
             </h2>
 
             <p className="text-sm text-slate-500">
-              Mock streaming agent workflow
+              AI-powered learning assistant
             </p>
           </div>
 
