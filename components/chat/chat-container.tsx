@@ -52,6 +52,10 @@ export function ChatContainer() {
         setStatus(event.message);
         break;
 
+      case "agent-selected":
+        setStatus(`${event.agentName} selected: ${event.reason}`);
+        break;
+
       case "tool-start":
         setStatus(event.message);
         break;
@@ -221,7 +225,7 @@ export function ChatContainer() {
             <h2 className="font-semibold text-slate-900">Learning Copilot</h2>
 
             <p className="text-sm text-slate-500">
-              AI-powered learning assistant
+              LangGraph multi-agent learning platform
             </p>
           </div>
 

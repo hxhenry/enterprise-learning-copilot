@@ -12,6 +12,7 @@
     "@ai-sdk/openai": "^4.0.14",
     "@langchain/classic": "^1.0.40",
     "@langchain/core": "^1.2.3",
+    "@langchain/langgraph": "^1.4.8",
     "@langchain/openai": "^1.5.5",
     "@langchain/textsplitters": "^1.0.1",
     "ai": "^7.0.28",

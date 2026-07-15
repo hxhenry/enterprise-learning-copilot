@@ -29,6 +29,12 @@ export type AgentEvent =
       type: "done";
     }
   | {
+      type: "agent-selected";
+      agentId: string;
+      agentName: string;
+      reason: string;
+    }
+  | {
       type: "error";
       message: string;
     };
@@ -46,14 +52,19 @@ export function isAgentEvent(value: unknown): value is AgentEvent {
 
     case "tool-start":
       return (
-        typeof event.toolName === "string" &&
-        typeof event.message === "string"
+        typeof event.toolName === "string" && typeof event.message === "string"
       );
 
     case "tool-result":
       return (
-        typeof event.toolName === "string" &&
-        typeof event.summary === "string"
+        typeof event.toolName === "string" && typeof event.summary === "string"
+      );
+
+    case "agent-selected":
+      return (
+        typeof event.agentId === "string" &&
+        typeof event.agentName === "string" &&
+        typeof event.reason === "string"
       );
 
     case "token":

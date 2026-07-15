@@ -1,11 +1,5 @@
-import type { OpenAILanguageModelResponsesOptions } from "@ai-sdk/openai";
-import { stepCountIs, streamText } from "ai";
-
-import { getLearningModel } from "@/lib/ai/model";
-import { LEARNING_COPILOT_SYSTEM_PROMPT } from "@/lib/prompts/learning-copilot";
+import { createLearningGraph } from "@/lib/agents/graph";
 import type { AgentEvent } from "@/lib/schemas/events";
-import { createCertificationTools } from "@/lib/tools/certification-tools";
-import { createRagTools } from "@/lib/tools/rag-tools";
 
 export const runtime = "nodejs";
 
@@ -62,7 +56,6 @@ export async function POST(request: Request): Promise<Response> {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let isClosed = false;
-      let providerError: unknown = null;
 
       const sendEvent = (event: AgentEvent): boolean => {
         if (isClosed || request.signal.aborted) {
@@ -95,102 +88,31 @@ export async function POST(request: Request): Promise<Response> {
       try {
         sendEvent({
           type: "status",
-          message: "Connecting to the learning model...",
+          message: "Starting the LangGraph workflow...",
         });
 
-        const reportEvent = (event: AgentEvent) => {
-          sendEvent(event);
-        };
-
-        const tools = {
-          ...createCertificationTools(reportEvent),
-          ...createRagTools(reportEvent),
-        };
-
-        const result = streamText({
-          model: getLearningModel(),
-
-          system: LEARNING_COPILOT_SYSTEM_PROMPT,
-
-          prompt: message,
-
-          tools,
-
-          stopWhen: stepCountIs(6),
-
-          maxOutputTokens: 900,
-
+        const graph = createLearningGraph({
+          reportEvent(event) {
+            sendEvent(event);
+          },
           abortSignal: request.signal,
-
-          timeout: {
-            totalMs: 90_000,
-            chunkMs: 30_000,
-          },
-
-          providerOptions: {
-            openai: {
-              store: false,
-            } satisfies OpenAILanguageModelResponsesOptions,
-          },
-
-          onStepFinish({
-            stepNumber,
-            finishReason,
-            toolCalls,
-            toolResults,
-            usage,
-          }) {
-            console.info("Learning agent step completed", {
-              stepNumber,
-              finishReason,
-              toolNames: toolCalls.map((toolCall) => toolCall.toolName),
-              toolResultCount: toolResults.length,
-              inputTokens: usage.inputTokens,
-              outputTokens: usage.outputTokens,
-            });
-          },
-
-          onError({ error }) {
-            providerError = error;
-
-            console.error("AI SDK streaming error:", error);
-          },
         });
 
-        sendEvent({
-          type: "status",
-          message: "Generating a response...",
-        });
-
-        let receivedText = false;
-
-        for await (const textPart of result.textStream) {
-          if (request.signal.aborted) {
-            break;
-          }
-
-          receivedText = true;
-
-          const sent = sendEvent({
-            type: "token",
-            content: textPart,
-          });
-
-          if (!sent) {
-            break;
-          }
-        }
+        const result = await graph.invoke(
+          {
+            userMessage: message,
+          },
+          {
+            recursionLimit: 8,
+          },
+        );
 
         if (request.signal.aborted) {
           return;
         }
 
-        if (providerError) {
-          throw providerError;
-        }
-
-        if (!receivedText) {
-          throw new Error("The model returned no text.");
+        if (!result.finalAnswer.trim()) {
+          throw new Error("The selected agent returned no final answer.");
         }
 
         sendEvent({
