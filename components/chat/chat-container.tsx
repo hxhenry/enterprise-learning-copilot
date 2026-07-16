@@ -5,14 +5,14 @@ import { useRef, useState } from "react";
 import { MessageComposer } from "@/components/chat/message-composer";
 import { MessageList } from "@/components/chat/message-list";
 import {
-  isAgentEvent,
   type AgentActivityStatus,
-  type AgentEvent,
+  type AgentEventPayload,
   type ChatMessage,
   type ExperienceBlock,
   type ApprovalRequest,
 } from "@/lib/schemas/events";
 import { ApprovalRequestCard } from "@/components/learning/approval-request-card";
+import { consumeAgentEventStream } from "@/lib/streaming/agent-event-stream";
 
 type PendingApproval = {
   assistantMessageId: string;
@@ -86,7 +86,7 @@ export function ChatContainer() {
 
   function addSelectedAgentActivity(
     assistantMessageId: string,
-    event: Extract<AgentEvent, { type: "agent-selected" }>,
+    event: Extract<AgentEventPayload, { type: "agent-selected" }>,
   ) {
     updateMessage(assistantMessageId, (message) => {
       const currentActivities = message.activities ?? [];
@@ -211,7 +211,10 @@ export function ChatContainer() {
     }));
   }
 
-  function handleAgentEvent(event: AgentEvent, assistantMessageId: string) {
+  function handleAgentEvent(
+    event: AgentEventPayload,
+    assistantMessageId: string,
+  ) {
     switch (event.type) {
       case "status":
         setStatus(event.message);
@@ -277,50 +280,17 @@ export function ChatContainer() {
     }
   }
 
-  async function processStream(response: Response, assistantMessageId: string) {
-    if (!response.body) {
-      throw new Error("The server did not return a response stream.");
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-
-    let buffer = "";
-
-    while (true) {
-      const { value, done } = await reader.read();
-
-      if (done) {
-        break;
-      }
-
-      buffer += decoder.decode(value, {
-        stream: true,
-      });
-
-      const eventBlocks = buffer.split("\n\n");
-
-      buffer = eventBlocks.pop() ?? "";
-
-      for (const eventBlock of eventBlocks) {
-        const dataLine = eventBlock
-          .split("\n")
-          .find((line) => line.startsWith("data:"));
-
-        if (!dataLine) {
-          continue;
-        }
-
-        const eventData = dataLine.slice("data:".length).trim();
-        const parsedEvent: unknown = JSON.parse(eventData);
-
-        if (!isAgentEvent(parsedEvent)) {
-          throw new Error("The server returned an invalid agent event.");
-        }
-
-        handleAgentEvent(parsedEvent, assistantMessageId);
-      }
-    }
+  async function processStream(
+    response: Response,
+    assistantMessageId: string,
+    expectedThreadId: string,
+  ) {
+    await consumeAgentEventStream(response, {
+      expectedThreadId,
+      onEvent: (event) => {
+        handleAgentEvent(event.payload, assistantMessageId);
+      },
+    });
   }
   async function handleApprovalDecision(approved: boolean) {
     if (!pendingApproval || approvalInFlight) {
@@ -340,13 +310,14 @@ export function ChatContainer() {
     abortControllerRef.current = abortController;
 
     try {
+      const threadId = getThreadId();
       const response = await fetch("/api/chat/approval", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          threadId: getThreadId(),
+          threadId,
           actionId: approvalRequest.actionId,
           approved,
         }),
@@ -364,7 +335,7 @@ export function ChatContainer() {
         );
       }
 
-      await processStream(response, assistantMessageId);
+      await processStream(response, assistantMessageId, threadId);
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
         setStatus("Approval processing was stopped.");
@@ -424,6 +395,7 @@ export function ChatContainer() {
     abortControllerRef.current = abortController;
 
     try {
+      const threadId = getThreadId();
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: {
@@ -431,7 +403,7 @@ export function ChatContainer() {
         },
         body: JSON.stringify({
           message: messageText,
-          threadId: getThreadId(),
+          threadId,
         }),
         signal: abortController.signal,
       });
@@ -447,7 +419,7 @@ export function ChatContainer() {
         );
       }
 
-      await processStream(response, assistantMessage.id);
+      await processStream(response, assistantMessage.id, threadId);
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
         updateAssistantMessage(

@@ -1,17 +1,13 @@
-export type EnrollmentRecord = {
-  actionId: string;
-  userId: string;
-  courseId: string;
-  courseTitle: string;
-  status: "enrolled";
-  approvedBy: string;
-  approvedAt: string;
-};
+import type {
+  CreateEnrollmentInput,
+  EnrollmentRecord,
+  EnrollmentResult,
+} from "@/lib/domain/enrollment";
 
-export type EnrollmentResult = {
-  record: EnrollmentRecord;
-  created: boolean;
-};
+export type {
+  EnrollmentRecord,
+  EnrollmentResult,
+} from "@/lib/domain/enrollment";
 
 const enrollmentRecords: EnrollmentRecord[] = [];
 
@@ -21,13 +17,7 @@ export function createCourseEnrollment({
   courseId,
   courseTitle,
   approvedBy,
-}: {
-  actionId: string;
-  userId: string;
-  courseId: string;
-  courseTitle: string;
-  approvedBy: string;
-}): EnrollmentResult {
+}: CreateEnrollmentInput): EnrollmentResult {
   const existingAction = enrollmentRecords.find(
     (record) => record.actionId === actionId,
   );

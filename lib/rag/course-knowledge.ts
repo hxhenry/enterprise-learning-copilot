@@ -5,18 +5,15 @@ import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { getServerEnvironment } from "@/lib/config/server-environment";
+import type { RetrievedKnowledge } from "@/lib/domain/knowledge";
+
+export type { RetrievedKnowledge } from "@/lib/domain/knowledge";
+
 type SourceDocumentConfig = {
   fileName: string;
   title: string;
   category: "course" | "policy";
-};
-
-export type RetrievedKnowledge = {
-  citationId: string;
-  title: string;
-  source: string;
-  category: string;
-  content: string;
 };
 
 const SOURCE_DOCUMENTS: SourceDocumentConfig[] = [
@@ -74,9 +71,8 @@ async function buildVectorStore(): Promise<MemoryVectorStore> {
   const documentChunks =
     await splitter.splitDocuments(rawDocuments);
 
-  const embeddingModel =
-    process.env.OPENAI_EMBEDDING_MODEL?.trim() ||
-    "text-embedding-3-small";
+  const { OPENAI_EMBEDDING_MODEL: embeddingModel } =
+    getServerEnvironment();
 
   const embeddings = new OpenAIEmbeddings({
     model: embeddingModel,

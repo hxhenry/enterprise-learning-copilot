@@ -37,6 +37,9 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 ## Quality checks
 
+Current milestone: `v0.2.0` — versioned contracts and integration-test
+foundations for the pre-production roadmap.
+
 Run automated tests:
 
 ```bash
@@ -55,6 +58,12 @@ Run linting:
 npm run lint
 ```
 
+Run TypeScript validation:
+
+```bash
+npm run typecheck
+```
+
 Create a production build:
 
 ```bash
@@ -66,6 +75,9 @@ Run the complete quality gate:
 ```bash
 npm run check
 ```
+
+The quality gate enforces linting, type-checking, test coverage thresholds, and
+a production build. See [CHANGELOG.md](CHANGELOG.md) for milestone details.
 
 ## Architecture
 

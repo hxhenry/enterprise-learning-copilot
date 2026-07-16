@@ -2,12 +2,14 @@ import { tool } from "ai";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 
-import { searchCourseKnowledge } from "@/lib/rag/course-knowledge";
-import type { AgentEvent } from "@/lib/schemas/events";
+import type { AgentEventReporter } from "@/lib/schemas/events";
+import type { KnowledgeRepository } from "@/lib/repositories/contracts";
+import { inMemoryKnowledgeRepository } from "@/lib/repositories/in-memory-repositories";
 
-type AgentEventReporter = (event: AgentEvent) => void;
-
-export function createRagTools(reportEvent: AgentEventReporter) {
+export function createRagTools(
+  reportEvent: AgentEventReporter,
+  repository: KnowledgeRepository = inMemoryKnowledgeRepository,
+) {
   return {
     searchCourseKnowledge: tool({
       description:
@@ -38,7 +40,10 @@ export function createRagTools(reportEvent: AgentEventReporter) {
         });
 
         try {
-          const passages = await searchCourseKnowledge(query, limit);
+          const passages = await repository.searchCourseKnowledge(
+            query,
+            limit,
+          );
 
           if (passages.length === 0) {
             reportEvent({
@@ -65,7 +70,7 @@ export function createRagTools(reportEvent: AgentEventReporter) {
             toolName: "searchCourseKnowledge",
             summary: `Found ${passages.length} relevant passages from ${uniqueSourceCount} source document${uniqueSourceCount === 1 ? "" : "s"}.`,
           });
-          
+
           reportEvent({
             type: "experience",
             block: {

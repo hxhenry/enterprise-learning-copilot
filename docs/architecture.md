@@ -53,7 +53,7 @@ The frontend uses:
 - Next.js App Router
 - TypeScript
 - Tailwind CSS
-- A custom typed `AgentEvent` streaming protocol
+- A custom typed protocol-v1 `AgentEvent` envelope
 - Structured experience components
 - Human approval components
 
@@ -66,6 +66,16 @@ The experience layer supports:
 - Analytics tables
 - RAG source cards
 - Approval and rejection controls
+
+Each streamed event carries:
+
+- Protocol version
+- Monotonic per-response sequence number
+- ISO timestamp
+- Request ID
+- Agent-run ID
+- Conversation thread ID
+- A runtime-validated allow-listed payload
 
 The frontend does not render arbitrary model-generated JSX.
 
@@ -289,6 +299,27 @@ The demo currently uses:
 - In-memory LangGraph checkpoints
 
 These are intentionally simple for demonstration purposes.
+
+The application accesses mock learning, analytics, enrollment, and knowledge
+data through asynchronous repository contracts. The current adapters remain
+in-memory, while the contracts provide the replacement boundary for durable
+implementations in the next milestone.
+
+Approval completion clears the pending action and records the resolved action
+ID in checkpoint state. A repeated decision can therefore return the durable
+result without executing the enrollment write again. The browser accepts only
+ordered protocol events whose request, agent-run, and thread identity remains
+stable, and treats EOF without a terminal `done` or `error` event as a failed
+stream.
+
+The current single-process adapter serializes approval resumes by thread and
+action ID so conflicting decisions cannot execute concurrently. The durable
+persistence milestone must replace this process-local guard with an atomic
+decision claim shared across application instances.
+
+Server configuration is validated through the Next.js instrumentation startup
+hook and again at the chat request boundary. Missing model credentials fail
+with a stable public configuration error rather than reaching the workflow.
 
 ## 10. Production target architecture
 

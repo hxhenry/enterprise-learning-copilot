@@ -1,10 +1,12 @@
-export type DepartmentCertificationStat = {
-  department: string;
-  totalEmployees: number;
-  completed: number;
-  inProgress: number;
-  overdue: number;
-};
+import type {
+  DepartmentCertificationResult,
+  DepartmentCertificationStat,
+} from "@/lib/domain/analytics";
+
+export type {
+  DepartmentCertificationResult,
+  DepartmentCertificationStat,
+} from "@/lib/domain/analytics";
 
 const departmentStats: DepartmentCertificationStat[] = [
   {
@@ -36,12 +38,6 @@ const departmentStats: DepartmentCertificationStat[] = [
     overdue: 6,
   },
 ];
-
-export type DepartmentCertificationResult =
-  DepartmentCertificationStat & {
-    completionRate: number;
-    atRisk: boolean;
-  };
 
 export function getCertificationStats(
   department?: string,

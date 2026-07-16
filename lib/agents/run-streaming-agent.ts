@@ -1,18 +1,22 @@
 import { performance } from "node:perf_hooks";
 
 import type { OpenAILanguageModelResponsesOptions } from "@ai-sdk/openai";
-import { stepCountIs, streamText, type ModelMessage, type ToolSet } from "ai";
+import {
+  stepCountIs,
+  streamText,
+  type LanguageModel,
+  type ModelMessage,
+  type ToolSet,
+} from "ai";
 
 import type { AgentId } from "@/lib/agents/registry";
 import type { ConversationTurn } from "@/lib/agents/state";
 import { getLearningModel } from "@/lib/ai/model";
 import { logError, logInfo } from "@/lib/observability/logger";
 import type { RunContext } from "@/lib/observability/run-context";
-import type { AgentEvent } from "@/lib/schemas/events";
+import type { AgentEventReporter } from "@/lib/schemas/events";
 
-type AgentEventReporter = (event: AgentEvent) => void;
-
-type RunStreamingAgentOptions = {
+export type RunStreamingAgentOptions = {
   agentId: AgentId;
   agentName: string;
   systemPrompt: string;
@@ -21,6 +25,7 @@ type RunStreamingAgentOptions = {
   reportEvent: AgentEventReporter;
   abortSignal: AbortSignal;
   runContext: RunContext;
+  model?: LanguageModel;
 };
 
 export async function runStreamingAgent({
@@ -32,6 +37,7 @@ export async function runStreamingAgent({
   reportEvent,
   abortSignal,
   runContext,
+  model = getLearningModel(),
 }: RunStreamingAgentOptions): Promise<string> {
   let providerError: unknown = null;
   let completedStepCount = 0;
@@ -57,7 +63,7 @@ export async function runStreamingAgent({
   }));
 
   const result = streamText({
-    model: getLearningModel(),
+    model,
 
     system: systemPrompt,
 

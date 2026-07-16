@@ -82,7 +82,17 @@ export type ChatMessage = {
   experienceBlocks?: ExperienceBlock[];
 };
 
-export type AgentEvent =
+export const AGENT_EVENT_PROTOCOL_VERSION = "1.0" as const;
+
+export const AGENT_ERROR_CODES = [
+  "WORKFLOW_EXECUTION_FAILED",
+  "APPROVAL_EXECUTION_FAILED",
+] as const;
+
+export type AgentErrorCode =
+  (typeof AGENT_ERROR_CODES)[number];
+
+export type AgentEventPayload =
   | {
       type: "status";
       message: string;
@@ -126,8 +136,24 @@ export type AgentEvent =
     }
   | {
       type: "error";
+      code: AgentErrorCode;
       message: string;
+      retryable: boolean;
     };
+
+export type AgentEvent = {
+  protocolVersion: typeof AGENT_EVENT_PROTOCOL_VERSION;
+  sequence: number;
+  emittedAt: string;
+  requestId: string;
+  agentRunId: string;
+  threadId: string;
+  payload: AgentEventPayload;
+};
+
+export type AgentEventReporter = (
+  event: AgentEventPayload,
+) => void;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -239,7 +265,9 @@ export function isExperienceBlock(value: unknown): value is ExperienceBlock {
   }
 }
 
-export function isAgentEvent(value: unknown): value is AgentEvent {
+export function isAgentEventPayload(
+  value: unknown,
+): value is AgentEventPayload {
   if (!isRecord(value)) {
     return false;
   }
@@ -285,9 +313,49 @@ export function isAgentEvent(value: unknown): value is AgentEvent {
       return true;
 
     case "error":
-      return typeof value.message === "string";
+      return (
+        AGENT_ERROR_CODES.some(
+          (code) => code === value.code,
+        ) &&
+        typeof value.message === "string" &&
+        typeof value.retryable === "boolean"
+      );
 
     default:
       return false;
   }
+}
+
+function isIsoTimestamp(value: unknown): value is string {
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  const parsedTimestamp = new Date(value);
+
+  return (
+    Number.isFinite(parsedTimestamp.getTime()) &&
+    parsedTimestamp.toISOString() === value
+  );
+}
+
+export function isAgentEvent(value: unknown): value is AgentEvent {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    value.protocolVersion === AGENT_EVENT_PROTOCOL_VERSION &&
+    typeof value.sequence === "number" &&
+    Number.isInteger(value.sequence) &&
+    value.sequence > 0 &&
+    isIsoTimestamp(value.emittedAt) &&
+    typeof value.requestId === "string" &&
+    value.requestId.length > 0 &&
+    typeof value.agentRunId === "string" &&
+    value.agentRunId.length > 0 &&
+    typeof value.threadId === "string" &&
+    value.threadId.length > 0 &&
+    isAgentEventPayload(value.payload)
+  );
 }

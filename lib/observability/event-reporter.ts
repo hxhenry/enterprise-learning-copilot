@@ -5,7 +5,12 @@ import {
   logInfo,
   logWarn,
 } from "@/lib/observability/logger";
-import type { AgentEvent } from "@/lib/schemas/events";
+import {
+  AGENT_EVENT_PROTOCOL_VERSION,
+  type AgentEvent,
+  type AgentEventPayload,
+  type AgentEventReporter,
+} from "@/lib/schemas/events";
 
 type AgentEventEmitter = (
   event: AgentEvent,
@@ -14,15 +19,18 @@ type AgentEventEmitter = (
 export function createObservedEventReporter({
   context,
   emit,
+  now = () => new Date(),
 }: {
   context: RunContext;
   emit: AgentEventEmitter;
-}) {
+  now?: () => Date;
+}): AgentEventReporter {
   const toolStartTimes =
     new Map<string, number[]>();
+  let sequence = 0;
 
   return function reportEvent(
-    event: AgentEvent,
+    event: AgentEventPayload,
   ): void {
     switch (event.type) {
       case "agent-selected":
@@ -149,6 +157,16 @@ export function createObservedEventReporter({
         break;
     }
 
-    emit(event);
+    sequence += 1;
+
+    emit({
+      protocolVersion: AGENT_EVENT_PROTOCOL_VERSION,
+      sequence,
+      emittedAt: now().toISOString(),
+      requestId: context.requestId,
+      agentRunId: context.agentRunId,
+      threadId: context.threadId,
+      payload: event,
+    });
   };
 }

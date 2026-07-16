@@ -1,5 +1,5 @@
 import type { OpenAILanguageModelResponsesOptions } from "@ai-sdk/openai";
-import { generateText, Output } from "ai";
+import { generateText, Output, type LanguageModel } from "ai";
 import { z } from "zod";
 
 import {
@@ -33,6 +33,7 @@ export async function routeLearningRequest(
   userMessage: string,
   conversation: ConversationTurn[],
   abortSignal: AbortSignal,
+  model: LanguageModel = getLearningModel(),
 ): Promise<RouterDecision> {
   const previousConversation = conversation
     .slice(0, -1)
@@ -41,7 +42,7 @@ export async function routeLearningRequest(
     .join("\n");
 
   const { output } = await generateText({
-    model: getLearningModel(),
+    model,
 
     system: buildRouterSystemPrompt(getAgentCatalogForPrompt()),
 

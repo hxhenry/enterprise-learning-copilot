@@ -61,6 +61,11 @@ export const LearningGraphState = new StateSchema({
     .nullable()
     .default(null),
 
+  resolvedEnrollmentActionId: z
+    .string()
+    .nullable()
+    .default(null),
+
   approvalStatus: z
     .enum([
       "not-required",
