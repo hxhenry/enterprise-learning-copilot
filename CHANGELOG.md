@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.4.0 - 2026-07-16
+
+### Added
+
+- An in-app four-scenario walkthrough, health-backed persistence status, and a
+  browser-only **New conversation** control for repeatable presentations.
+- A presentation preflight and deterministic five-minute walkthrough with exact
+  prompts, expected fictional-data results, recovery steps, and interview
+  talking points.
+- An Agentic AI Engineer JD evidence matrix that separates implemented,
+  partially demonstrated, and roadmap capabilities.
+- Explicit startup, readiness, browser-thread reset, in-memory reset, and
+  destructive local PostgreSQL reset guidance.
+
+### Changed
+
+- Positioned the project as a presentation-ready pre-production integration
+  demo rather than a production deployment.
+- Clarified that the UI streams incremental text deltas and that analytics
+  reports aggregate overdue counts rather than employee-level records.
+- Clarified which persistence, security, observability, and infrastructure
+  capabilities exist today and which remain production roadmap items.
+
+### Known limitations
+
+- This milestone does not add production authentication, live enterprise data,
+  persistent retrieval, centralized telemetry, or deployment infrastructure.
+- Live-model wording, latency, and tool ordering can vary even though the demo
+  prompts, fictional records, workflow contracts, and expected calculations are
+  fixed.
+
 ## 0.3.0 - 2026-07-16
 
 ### Added
@@ -12,13 +43,13 @@
 - Transactional enrollment action claims, unique enrollment constraints, and
   deterministic idempotent replay.
 - Actor-scoped checkpoint identifiers so client thread IDs cannot collide
-  across authenticated users.
+  across server-controlled actors.
 - PostgreSQL advisory-lock workflow coordination shared by chat and approval
   requests across application instances.
 - Readiness reporting that verifies the selected persistence backend, required
   relations, application migration checksums, and checkpoint migration level.
-- A zero-install PGlite integration harness, pinned PostgreSQL Compose service,
-  and real PostgreSQL GitHub Actions integration job.
+- A PGlite integration harness that needs no external database service, a
+  pinned PostgreSQL Compose service, and a real PostgreSQL GitHub Actions job.
 
 ### Changed
 
@@ -58,8 +89,8 @@
   repository integration tests.
 - Native route-handler SSE tests, real LangGraph interrupt/resume tests, AI SDK
   mock-model tests, and tool contract tests.
-- Idempotent approval replay with durable resolved-action state and exactly-once
-  enrollment verification.
+- Idempotent approval replay with checkpointed resolved-action state and
+  duplicate-write verification.
 - Enforced coverage thresholds in the complete quality gate.
 
 ### Changed

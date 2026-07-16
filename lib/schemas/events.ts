@@ -68,7 +68,7 @@ export type AgentActivityStatus =
 
 export type AgentActivity = {
   id: string;
-  kind: "agent" | "tool";
+  kind: "agent" | "tool" | "approval";
   name: string;
   detail: string;
   status: AgentActivityStatus;

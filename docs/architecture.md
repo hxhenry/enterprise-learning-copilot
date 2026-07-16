@@ -2,7 +2,8 @@
 
 ## 1. Overview
 
-Enterprise Learning Copilot is a TypeScript-based multi-agent learning platform that supports:
+Enterprise Learning Copilot is a TypeScript-based, pre-production multi-agent
+integration demo that supports:
 
 - Technical course tutoring
 - Certification progress tracking
@@ -11,6 +12,11 @@ Enterprise Learning Copilot is a TypeScript-based multi-agent learning platform 
 - Retrieval-augmented generation
 - Human approval for write operations
 - Stateful multi-turn conversations
+
+The current repository demonstrates integration patterns, not a deployed
+enterprise learning platform. See the [five-minute demo guide](demo-guide.md)
+for the presentation path and the [JD alignment](jd-alignment.md) for an
+evidence-based implemented-versus-roadmap assessment.
 
 ## 2. Current demo architecture
 
@@ -59,13 +65,15 @@ The frontend uses:
 
 The experience layer supports:
 
-- Token-by-token streamed responses
+- Incremental text-delta responses over SSE
 - Agent-selection status
 - Tool-execution timelines
 - Certification progress cards
 - Analytics tables
 - RAG source cards
 - Approval and rejection controls
+- A four-scenario guided presentation panel
+- Persistence-readiness status and a browser-only conversation reset
 
 Each streamed event carries:
 
@@ -80,6 +88,10 @@ Each streamed event carries:
 The frontend does not render arbitrary model-generated JSX.
 
 The backend emits allow-listed structured blocks, and React maps each block to a trusted component.
+
+The runtime indicator reads `/api/health`. It reports server configuration and
+selected-persistence readiness, not model-provider or embedding-provider
+availability.
 
 ## 4. AI and orchestration layer
 
@@ -168,8 +180,8 @@ Tools:
 Responsibilities:
 
 - Compare department completion rates
-- Identify overdue employees
-- Determine risk status
+- Compare department overdue counts
+- Determine department risk status
 - Explain business implications
 
 Tools:
@@ -252,9 +264,14 @@ PostgreSQL checkpoint
 → resume the same pending approval
 ```
 
+That is a server-side recovery capability, not browser transcript rehydration.
+The loaded page can retain its thread through a server restart, but a full page
+reload starts a new browser thread and does not reconstruct a pending approval
+card from an older checkpoint.
+
 Client thread IDs are not used directly as checkpoint keys. The server derives
-an actor-scoped identifier so two authenticated users cannot collide by choosing
-the same client thread ID.
+an actor-scoped identifier so two server-controlled actors cannot collide by
+choosing the same client thread ID.
 
 Migrations are an explicit deployment step. Runtime initialization validates
 configuration and creates a pool, but it does not create or modify database
@@ -308,9 +325,9 @@ Execute write       No data change
 
 The model cannot directly execute a write.
 
-The server validates:
+The server validates against its fixed, server-controlled demo actor:
 
-- Authenticated actor
+- Actor context
 - Required permission
 - Action ownership
 - Pending action ID
