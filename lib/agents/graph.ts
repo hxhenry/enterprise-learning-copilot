@@ -9,7 +9,6 @@ import {
   type ConditionalEdgeRouter,
 } from "@langchain/langgraph";
 
-import { learningGraphCheckpointer } from "@/lib/agents/checkpointer";
 import { AGENT_REGISTRY, type AgentId } from "@/lib/agents/registry";
 import { routeLearningRequest } from "@/lib/agents/router";
 import { runStreamingAgent } from "@/lib/agents/run-streaming-agent";
@@ -35,16 +34,15 @@ import { createCertificationTools } from "@/lib/tools/certification-tools";
 import { createRagTools } from "@/lib/tools/rag-tools";
 import { resolveRequestedCourse } from "@/lib/agents/course-resolution";
 import type { LearningGraphRepositories } from "@/lib/repositories/contracts";
-import { inMemoryLearningGraphRepositories } from "@/lib/repositories/in-memory-repositories";
 
 export type LearningGraphDependencies = {
-  routeRequest: typeof routeLearningRequest;
-  runAgent: typeof runStreamingAgent;
-  resolveCourse: typeof resolveRequestedCourse;
   checkpointer: BaseCheckpointSaver;
   repositories: LearningGraphRepositories;
-  createActionId: () => string;
-  now: () => Date;
+  routeRequest?: typeof routeLearningRequest;
+  runAgent?: typeof runStreamingAgent;
+  resolveCourse?: typeof resolveRequestedCourse;
+  createActionId?: () => string;
+  now?: () => Date;
 };
 
 export type CreateLearningGraphOptions = {
@@ -52,11 +50,7 @@ export type CreateLearningGraphOptions = {
   abortSignal: AbortSignal;
   actor: AuthenticatedActor;
   runContext: RunContext;
-  dependencies?: Partial<
-    Omit<LearningGraphDependencies, "repositories">
-  > & {
-    repositories?: Partial<LearningGraphRepositories>;
-  };
+  dependencies: LearningGraphDependencies;
 };
 
 type RouterDestination = AgentId | "prepareEnrollment";
@@ -95,12 +89,8 @@ export function createLearningGraph({
   const runAgent = dependencies?.runAgent ?? runStreamingAgent;
   const resolveCourse =
     dependencies?.resolveCourse ?? resolveRequestedCourse;
-  const checkpointer =
-    dependencies?.checkpointer ?? learningGraphCheckpointer;
-  const repositories: LearningGraphRepositories = {
-    ...inMemoryLearningGraphRepositories,
-    ...dependencies?.repositories,
-  };
+  const checkpointer = dependencies.checkpointer;
+  const repositories = dependencies.repositories;
   const createActionId =
     dependencies?.createActionId ?? randomUUID;
   const now = dependencies?.now ?? (() => new Date());

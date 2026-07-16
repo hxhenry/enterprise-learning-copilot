@@ -4,7 +4,13 @@ import { Command, INTERRUPT } from "@langchain/langgraph";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CreateLearningGraphOptions } from "@/lib/agents/graph";
+import {
+  InMemoryWorkflowExecutionCoordinator,
+  WorkflowLockReleaseError,
+} from "@/lib/concurrency/workflow-execution-coordinator";
+import { PersistenceOperationError } from "@/lib/database/errors";
 import type { RunContext } from "@/lib/observability/run-context";
+import { createCheckpointThreadId } from "@/lib/security/checkpoint-thread";
 import { readAgentEvents } from "@/tests/helpers/sse";
 
 const mocks = vi.hoisted(() => ({
@@ -41,12 +47,14 @@ function createRequest(body: unknown): Request {
 
 describe("POST /api/chat/approval", () => {
   beforeEach(() => {
+    vi.stubEnv("OPENAI_API_KEY", "test-key");
     mocks.createRunContext.mockReturnValue(runContext);
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
     mocks.createLearningGraph.mockReset();
     mocks.createRunContext.mockReset();
@@ -140,7 +148,10 @@ describe("POST /api/chat/approval", () => {
       });
       expect(invoke.mock.calls[0]?.[1]).toMatchObject({
         configurable: {
-          thread_id: "thread-123",
+          thread_id: createCheckpointThreadId(
+            "user-001",
+            "thread-123",
+          ),
         },
         recursionLimit: 12,
       });
@@ -183,12 +194,6 @@ describe("POST /api/chat/approval", () => {
     {
       finalAnswer: "",
       approvalStatus: "approved",
-      pendingEnrollment: null,
-      resolvedEnrollmentActionId: "action-123",
-    },
-    {
-      finalAnswer: "Enrollment approved.",
-      approvalStatus: "rejected",
       pendingEnrollment: null,
       resolvedEnrollmentActionId: "action-123",
     },
@@ -386,9 +391,15 @@ describe("POST /api/chat/approval", () => {
 
     expect(maximumActiveInvocations).toBe(1);
     expect(approvedEvents.at(-1)?.payload.type).toBe("done");
-    expect(rejectedEvents.at(-1)?.payload).toMatchObject({
-      type: "error",
-      code: "APPROVAL_EXECUTION_FAILED",
+    expect(rejectedEvents.map((event) => event.payload.type)).toEqual([
+      "status",
+      "approval-resolved",
+      "done",
+    ]);
+    expect(rejectedEvents[1]?.payload).toMatchObject({
+      type: "approval-resolved",
+      actionId: "action-concurrent",
+      approved: true,
     });
   });
 
@@ -415,5 +426,82 @@ describe("POST /api/chat/approval", () => {
       retryable: false,
     });
     expect(events.some((event) => event.payload.type === "done")).toBe(false);
+  });
+
+  it("marks a transient persistence failure as retryable", async () => {
+    mocks.createLearningGraph.mockReturnValue({
+      invoke: vi.fn(async () => {
+        throw new PersistenceOperationError(
+          Object.assign(new Error("database-host-secret"), {
+            code: "08006",
+          }),
+        );
+      }),
+    });
+
+    const response = await POST(
+      createRequest({
+        threadId: "thread-123",
+        actionId: "action-123",
+        approved: true,
+      }),
+    );
+    const events = await readAgentEvents(response);
+
+    expect(events.at(-1)?.payload).toEqual({
+      type: "error",
+      code: "PERSISTENCE_UNAVAILABLE",
+      message:
+        "Durable persistence is temporarily unavailable. Please retry.",
+      retryable: true,
+    });
+    expect(JSON.stringify(events)).not.toContain("database-host-secret");
+  });
+
+  it("does not publish a terminal approval before lock cleanup succeeds", async () => {
+    mocks.createLearningGraph.mockImplementation((value: unknown) => {
+      const options = value as CreateLearningGraphOptions;
+
+      options.reportEvent({
+        type: "approval-resolved",
+        actionId: "action-123",
+        approved: true,
+        message: "Enrollment approved.",
+      });
+
+      return {
+        invoke: vi.fn(async () => ({
+          finalAnswer: "Enrollment approved.",
+          approvalStatus: "approved",
+          pendingEnrollment: null,
+          resolvedEnrollmentActionId: "action-123",
+        })),
+      };
+    });
+    vi.spyOn(
+      InMemoryWorkflowExecutionCoordinator.prototype,
+      "run",
+    ).mockImplementation(async (_key, operation) => {
+      await operation();
+      throw new WorkflowLockReleaseError();
+    });
+
+    const response = await POST(
+      createRequest({
+        threadId: "thread-123",
+        actionId: "action-123",
+        approved: true,
+      }),
+    );
+    const events = await readAgentEvents(response);
+
+    expect(events.map((event) => event.payload.type)).toEqual([
+      "status",
+      "error",
+    ]);
+    expect(events.at(-1)?.payload).toMatchObject({
+      code: "PERSISTENCE_UNAVAILABLE",
+      retryable: true,
+    });
   });
 });

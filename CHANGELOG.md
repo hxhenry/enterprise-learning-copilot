@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.3.0 - 2026-07-16
+
+### Added
+
+- Optional PostgreSQL persistence for LangGraph checkpoints and approved course
+  enrollments, with separate bounded data and workflow-lock connection pools so
+  lock holders cannot starve checkpoint or repository queries.
+- Explicit, checksum-validated application migrations plus the official
+  LangGraph PostgreSQL checkpointer migrations.
+- Transactional enrollment action claims, unique enrollment constraints, and
+  deterministic idempotent replay.
+- Actor-scoped checkpoint identifiers so client thread IDs cannot collide
+  across authenticated users.
+- PostgreSQL advisory-lock workflow coordination shared by chat and approval
+  requests across application instances.
+- Readiness reporting that verifies the selected persistence backend, required
+  relations, application migration checksums, and checkpoint migration level.
+- A zero-install PGlite integration harness, pinned PostgreSQL Compose service,
+  and real PostgreSQL GitHub Actions integration job.
+
+### Changed
+
+- Graph construction now requires an injected checkpointer and complete
+  repository bundle instead of importing persistence singletons.
+- Approval replay converges on the first durable terminal decision, including
+  when a later request submits the opposite decision.
+- PostgreSQL selection is explicit and fail-fast; runtime startup never runs
+  migrations and never silently falls back to memory.
+
+### Known limitations
+
+- Learning, analytics, and knowledge retrieval adapters remain in memory. Only
+  workflow checkpoints and enrollment writes are durable in this milestone.
+- The demo authentication provider still supplies a fixed local actor; SSO and
+  production authorization-policy integration remain future milestones.
+- A workflow checkpoint and an enrollment write use separate database
+  transactions. Crash recovery is safe through durable action claims and
+  idempotent replay, rather than a distributed transaction.
+- The inherited PostCSS advisory described in v0.2 remains open pending a safe
+  stable Next.js upgrade.
+
 ## 0.2.0 - 2026-07-15
 
 ### Added

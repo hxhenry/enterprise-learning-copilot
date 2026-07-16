@@ -1,92 +1,96 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Enterprise Learning Copilot
 
-## Getting Started
+A Next.js and LangGraph integration demo for an enterprise learning copilot.
+It combines a typed React experience layer, protocol-versioned SSE streaming,
+specialized agents, RAG, tool calling, human approval, and optional durable
+PostgreSQL workflow state.
 
-First, run the development server:
+Current milestone: `v0.3.0` — durable workflow checkpoints, idempotent enrollment
+writes, and cross-instance workflow serialization.
+
+## Run the demo
+
+Install dependencies and copy the environment template:
+
+```bash
+npm install
+cp .env.example .env.local
+```
+
+Set `OPENAI_API_KEY` in `.env.local`, then start the default zero-dependency
+memory backend:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Run with durable PostgreSQL persistence
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-
-## Quality checks
-
-Current milestone: `v0.2.0` — versioned contracts and integration-test
-foundations for the pre-production roadmap.
-
-Run automated tests:
+Start the pinned local PostgreSQL service:
 
 ```bash
-npm run test
+npm run db:up
 ```
 
-Generate a coverage report:
+Run the explicit database migrations before starting the application:
 
 ```bash
-npm run test:coverage
+PERSISTENCE_BACKEND=postgres \
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/enterprise_learning \
+npm run db:migrate
 ```
 
-Run linting:
+The migration command serializes the complete application and LangGraph
+checkpoint migration batch with a database advisory lock, so overlapping
+deployment jobs cannot race.
 
-```bash
-npm run lint
-```
+Set the same persistence values in `.env.local`, then run `npm run dev`.
+The runtime never creates schemas automatically and never falls back to memory
+when PostgreSQL is selected.
 
-Run TypeScript validation:
+The PostgreSQL runtime uses separate bounded pools for data operations and
+session advisory locks. `POSTGRES_POOL_MAX` controls checkpoint/repository
+connections and `POSTGRES_WORKFLOW_LOCK_POOL_MAX` controls concurrent lock
+sessions; plan database capacity for the sum of both limits per app process.
 
-```bash
-npm run typecheck
-```
+`GET /api/health` returns `200` only after the selected backend passes its
+readiness check; an unmigrated or unavailable PostgreSQL schema returns `503`.
 
-Create a production build:
+Stop the local service with `npm run db:down`.
 
-```bash
-npm run build
-```
+## Verification
 
-Run the complete quality gate:
+Run the unit, component, route, and in-memory integration gate:
 
 ```bash
 npm run check
 ```
 
-The quality gate enforces linting, type-checking, test coverage thresholds, and
-a production build. See [CHANGELOG.md](CHANGELOG.md) for milestone details.
+Run the durable integration suite locally against an ephemeral PostgreSQL-compatible
+PGlite server (no Docker required):
+
+```bash
+npm run test:postgres:local
+```
+
+PGlite intentionally uses one PostgreSQL session behind its socket adapter, so
+the local suite records that limitation instead of claiming to validate
+cross-session advisory locks. The mandatory real-PostgreSQL CI job runs the
+two-coordinator race test.
+
+Run that suite against a real PostgreSQL database:
+
+```bash
+TEST_DATABASE_URL=postgresql://user:password@host/database npm run test:postgres
+```
+
+GitHub Actions runs both `npm run check` and the durable suite against a pinned
+PostgreSQL 18 service. See [CHANGELOG.md](CHANGELOG.md) for milestone details.
 
 ## Architecture
 
-See [docs/architecture.md](docs/architecture.md) for:
-
-- Current demo architecture
-- Multi-agent workflow design
-- Human approval architecture
-- Production scaling strategy
-- Security controls
-- Observability design
-- Kubernetes and OpenShift deployment considerations
+See [docs/architecture.md](docs/architecture.md) for the workflow, streaming
+protocol, approval boundary, persistence model, security controls, production
+scaling direction, and explicit demo limitations.

@@ -4,7 +4,9 @@ import { INTERRUPT } from "@langchain/langgraph";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CreateLearningGraphOptions } from "@/lib/agents/graph";
+import { PersistenceOperationError } from "@/lib/database/errors";
 import type { RunContext } from "@/lib/observability/run-context";
+import { createCheckpointThreadId } from "@/lib/security/checkpoint-thread";
 import { readAgentEvents } from "@/tests/helpers/sse";
 
 const mocks = vi.hoisted(() => ({
@@ -99,7 +101,7 @@ describe("POST /api/chat", () => {
     expect(response.status).toBe(500);
     await expect(response.json()).resolves.toEqual({
       code: "SERVER_CONFIGURATION_ERROR",
-      error: "The server is missing its OpenAI API configuration.",
+      error: "The server configuration is invalid.",
     });
   });
 
@@ -164,7 +166,10 @@ describe("POST /api/chat", () => {
       }),
       expect.objectContaining({
         configurable: {
-          thread_id: "thread-123",
+          thread_id: createCheckpointThreadId(
+            "user-001",
+            "thread-123",
+          ),
         },
         recursionLimit: 12,
       }),
@@ -209,7 +214,9 @@ describe("POST /api/chat", () => {
   it("emits a typed public error without leaking the internal failure", async () => {
     mocks.createLearningGraph.mockReturnValue({
       invoke: vi.fn(async () => {
-        throw new Error("provider-secret-stack");
+        throw Object.assign(new Error("provider-secret-stack"), {
+          code: "ECONNRESET",
+        });
       }),
     });
 
@@ -230,6 +237,35 @@ describe("POST /api/chat", () => {
     });
     expect(JSON.stringify(events)).not.toContain("provider-secret-stack");
     expect(events.some((event) => event.payload.type === "done")).toBe(false);
+  });
+
+  it("marks a transient persistence failure as retryable", async () => {
+    mocks.createLearningGraph.mockReturnValue({
+      invoke: vi.fn(async () => {
+        throw new PersistenceOperationError(
+          Object.assign(new Error("database-host-secret"), {
+            code: "ECONNREFUSED",
+          }),
+        );
+      }),
+    });
+
+    const response = await POST(
+      createRequest({
+        message: "Hello",
+        threadId: "thread-123",
+      }),
+    );
+    const events = await readAgentEvents(response);
+
+    expect(events.at(-1)?.payload).toEqual({
+      type: "error",
+      code: "PERSISTENCE_UNAVAILABLE",
+      message:
+        "Durable persistence is temporarily unavailable. Please retry.",
+      retryable: true,
+    });
+    expect(JSON.stringify(events)).not.toContain("database-host-secret");
   });
 
   it("closes quietly when the browser cancels the request", async () => {
@@ -258,7 +294,7 @@ describe("POST /api/chat", () => {
 
     const events = await readAgentEvents(response);
 
-    expect(invoke).toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
     expect(events.map((event) => event.payload.type)).toEqual(["status"]);
     expect(events.some((event) => event.payload.type === "error")).toBe(false);
     expect(events.some((event) => event.payload.type === "done")).toBe(false);

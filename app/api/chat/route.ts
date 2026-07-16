@@ -9,10 +9,19 @@ import { createObservedEventReporter } from "@/lib/observability/event-reporter"
 import { logError, logInfo } from "@/lib/observability/logger";
 import { createRunContext } from "@/lib/observability/run-context";
 import { encodeAgentEvent } from "@/lib/streaming/agent-event-stream";
+import { getLearningRuntime } from "@/lib/runtime/learning-runtime";
+import {
+  createCheckpointThreadId,
+  createWorkflowLockKey,
+} from "@/lib/security/checkpoint-thread";
 import {
   getServerEnvironment,
   ServerEnvironmentError,
 } from "@/lib/config/server-environment";
+import {
+  isPersistenceError,
+  isRetryablePersistenceError,
+} from "@/lib/database/persistence-error";
 
 export const runtime = "nodejs";
 
@@ -73,7 +82,7 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json(
       {
         code: "SERVER_CONFIGURATION_ERROR",
-        error: "The server is missing its OpenAI API configuration.",
+        error: "The server configuration is invalid.",
       },
       {
         status: 500,
@@ -86,6 +95,10 @@ export async function POST(request: Request): Promise<Response> {
     threadId,
     operation: "chat",
   });
+  const checkpointThreadId = createCheckpointThreadId(
+    actor.userId,
+    threadId,
+  );
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -132,9 +145,14 @@ export async function POST(request: Request): Promise<Response> {
       });
 
       try {
+        const learningRuntime = await getLearningRuntime();
+
         reportEvent({
           type: "status",
-          message: "Starting the persistent LangGraph workflow...",
+          message:
+            learningRuntime.backend === "postgres"
+              ? "Starting the durable LangGraph workflow..."
+              : "Starting the LangGraph workflow...",
         });
 
         const graph = createLearningGraph({
@@ -142,32 +160,43 @@ export async function POST(request: Request): Promise<Response> {
           abortSignal: request.signal,
           actor,
           runContext,
+          dependencies: {
+            checkpointer: learningRuntime.checkpointer,
+            repositories: learningRuntime.repositories,
+          },
         });
 
-        const result = await graph.invoke(
-          {
-            userMessage: message,
-
-            conversation: [
+        const result = await learningRuntime.workflowCoordinator.run(
+          createWorkflowLockKey(checkpointThreadId),
+          () =>
+            graph.invoke(
               {
-                role: "user",
-                content: message,
-              },
-            ],
+                userMessage: message,
 
-            selectedAgent: null,
-            routingReason: "",
-            requestKind: "answer",
-            pendingEnrollment: null,
-            resolvedEnrollmentActionId: null,
-            approvalStatus: "not-required",
-            finalAnswer: "",
-          },
+                conversation: [
+                  {
+                    role: "user",
+                    content: message,
+                  },
+                ],
+
+                selectedAgent: null,
+                routingReason: "",
+                requestKind: "answer",
+                pendingEnrollment: null,
+                resolvedEnrollmentActionId: null,
+                approvalStatus: "not-required",
+                finalAnswer: "",
+              },
+              {
+                configurable: {
+                  thread_id: checkpointThreadId,
+                },
+                recursionLimit: 12,
+              },
+            ),
           {
-            configurable: {
-              thread_id: threadId,
-            },
-            recursionLimit: 12,
+            signal: request.signal,
           },
         );
 
@@ -216,6 +245,10 @@ export async function POST(request: Request): Promise<Response> {
         });
       } catch (error) {
         if (!request.signal.aborted) {
+          const persistenceUnavailable =
+            isPersistenceError(error);
+          const retryable = isRetryablePersistenceError(error);
+
           logError("http.request.failed", runContext, error, {
             route: "/api/chat",
             durationMs: Math.round(performance.now() - startedAt),
@@ -223,9 +256,15 @@ export async function POST(request: Request): Promise<Response> {
 
           reportEvent({
             type: "error",
-            code: "WORKFLOW_EXECUTION_FAILED",
-            message: "The learning workflow could not complete the request.",
-            retryable: false,
+            code: persistenceUnavailable
+              ? "PERSISTENCE_UNAVAILABLE"
+              : "WORKFLOW_EXECUTION_FAILED",
+            message: persistenceUnavailable
+              ? retryable
+                ? "Durable persistence is temporarily unavailable. Please retry."
+                : "Durable persistence is unavailable."
+              : "The learning workflow could not complete the request.",
+            retryable,
           });
         }
       } finally {

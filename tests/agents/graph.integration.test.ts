@@ -15,6 +15,7 @@ import {
 import type { AgentId } from "@/lib/agents/registry";
 import type { RunStreamingAgentOptions } from "@/lib/agents/run-streaming-agent";
 import type { EnrollmentRepository } from "@/lib/repositories/contracts";
+import { inMemoryLearningGraphRepositories } from "@/lib/repositories/in-memory-repositories";
 import type { AgentEventPayload } from "@/lib/schemas/events";
 import { getAuthenticatedActor } from "@/lib/security/authorization";
 
@@ -139,6 +140,7 @@ describe("learning graph integration", () => {
           routeRequest,
           runAgent,
           checkpointer: new MemorySaver(),
+          repositories: inMemoryLearningGraphRepositories,
         },
       });
 
@@ -186,6 +188,7 @@ describe("learning graph integration", () => {
         routeRequest,
         checkpointer,
         repositories: {
+          ...inMemoryLearningGraphRepositories,
           enrollment: repository,
         },
         createActionId: () => "action-fixed",
@@ -288,6 +291,7 @@ describe("learning graph integration", () => {
       }),
       checkpointer,
       repositories: {
+        ...inMemoryLearningGraphRepositories,
         enrollment: repository,
       },
       createActionId: () => "action-rejected",

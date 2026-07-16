@@ -11,6 +11,8 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],
+    include: ["tests/**/*.test.{ts,tsx}"],
+    exclude: ["tests/persistence/**/*.postgres.test.ts"],
 
     coverage: {
       provider: "v8",

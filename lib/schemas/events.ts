@@ -87,6 +87,7 @@ export const AGENT_EVENT_PROTOCOL_VERSION = "1.0" as const;
 export const AGENT_ERROR_CODES = [
   "WORKFLOW_EXECUTION_FAILED",
   "APPROVAL_EXECUTION_FAILED",
+  "PERSISTENCE_UNAVAILABLE",
 ] as const;
 
 export type AgentErrorCode =

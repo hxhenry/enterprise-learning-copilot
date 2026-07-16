@@ -23,11 +23,11 @@ Next.js API Routes
         v
 LangGraph Workflow
         |
-        +-------------------+
-        |                   |
-        v                   v
-Agent Router          LangGraph Memory
-        |              and Checkpoints
+        +------------------------+
+        |                        |
+        v                        v
+Agent Router        MemorySaver or PostgreSQL
+        |                Checkpoints
         v
 Specialized Agents
         |
@@ -220,9 +220,14 @@ Possible options include:
 
 ## 7. Memory and persistence
 
-The current demo uses LangGraph `MemorySaver`.
+The runtime has two explicit persistence modes:
 
-It stores:
+- `memory` uses LangGraph `MemorySaver` and the in-memory enrollment adapter.
+- `postgres` uses the official LangGraph `PostgresSaver` and the PostgreSQL
+  enrollment adapter through a bounded data pool. Session advisory locks use a
+  second bounded pool so lock holders cannot consume checkpoint/query capacity.
+
+Checkpoints store:
 
 - Conversation history
 - Selected agent
@@ -238,14 +243,39 @@ Conversation history is bounded to the latest turns to control:
 - Latency
 - Context size
 
-Current limitation:
+The memory backend remains useful for a zero-dependency UI demo, but restart
+recovery requires PostgreSQL:
 
 ```text
-Server restart
-→ in-memory checkpoints are lost
+PostgreSQL checkpoint
+→ server or replica restart
+→ resume the same pending approval
 ```
 
-Production should use a durable LangGraph checkpointer backed by PostgreSQL or another persistent database.
+Client thread IDs are not used directly as checkpoint keys. The server derives
+an actor-scoped identifier so two authenticated users cannot collide by choosing
+the same client thread ID.
+
+Migrations are an explicit deployment step. Runtime initialization validates
+configuration and creates a pool, but it does not create or modify database
+schemas. Selecting PostgreSQL with missing configuration or migrations fails;
+there is no automatic memory fallback.
+
+The migration command holds a database-wide deployment advisory lock across
+both application migrations and the official checkpointer setup. Readiness then
+checks the exact application migration IDs/checksums and expected checkpoint
+migration history, rather than accepting table names alone.
+
+Every graph invocation for an actor-scoped thread runs under the same workflow
+coordinator. The memory backend uses a process-local keyed executor. PostgreSQL
+uses a session advisory lock, so chat and approval requests serialize across
+application replicas without holding a database transaction open while the
+graph executes.
+
+`POSTGRES_POOL_MAX` bounds checkpoint and repository connections;
+`POSTGRES_WORKFLOW_LOCK_POOL_MAX` independently bounds long-lived advisory-lock
+sessions. A process can therefore open at most the sum of those two configured
+limits during normal runtime operation.
 
 ## 8. Human approval and write security
 
@@ -290,20 +320,16 @@ The server validates:
 
 ## 9. Current demo data stores
 
-The demo currently uses:
-
-- In-memory learning data
-- In-memory analytics data
-- In-memory enrollment records
-- In-memory vector store
-- In-memory LangGraph checkpoints
-
-These are intentionally simple for demonstration purposes.
+Learning records, analytics data, and the RAG vector store remain in memory.
+Enrollment records and LangGraph checkpoints can run either in memory or in
+PostgreSQL. These adapters sit behind asynchronous repository and checkpointer
+contracts so persistence selection does not change graph node behavior.
 
 The application accesses mock learning, analytics, enrollment, and knowledge
-data through asynchronous repository contracts. The current adapters remain
-in-memory, while the contracts provide the replacement boundary for durable
-implementations in the next milestone.
+data through asynchronous repository contracts. The PostgreSQL enrollment
+adapter claims every approval action ID and creates the enrollment in one
+transaction. Unique action and `(user, course)` constraints make retries
+deterministic and prevent duplicate records.
 
 Approval completion clears the pending action and records the resolved action
 ID in checkpoint state. A repeated decision can therefore return the durable
@@ -312,14 +338,20 @@ ordered protocol events whose request, agent-run, and thread identity remains
 stable, and treats EOF without a terminal `done` or `error` event as a failed
 stream.
 
-The current single-process adapter serializes approval resumes by thread and
-action ID so conflicting decisions cannot execute concurrently. The durable
-persistence milestone must replace this process-local guard with an atomic
-decision claim shared across application instances.
+The first terminal approval decision persisted in a checkpoint is canonical.
+If another replica later submits the opposite decision, it acquires the same
+thread lock, reads the terminal checkpoint, and returns that canonical result.
+Approval events are buffered until the server validates the terminal state.
+
+The enrollment transaction and the LangGraph checkpoint transaction are
+separate. A crash between them can replay the execute node, but the durable
+action claim makes that replay a no-op instead of a duplicate write. This is an
+idempotent recovery model, not a distributed transaction.
 
 Server configuration is validated through the Next.js instrumentation startup
-hook and again at the chat request boundary. Missing model credentials fail
-with a stable public configuration error rather than reaching the workflow.
+hook and again at the request boundary. Missing model or selected persistence
+configuration fails with a stable public error rather than reaching the model
+or silently changing backend.
 
 ## 10. Production target architecture
 
@@ -581,8 +613,6 @@ Secrets should be provided through:
 The current demo does not include:
 
 - Real SSO
-- Durable graph checkpoints
-- Production enrollment database
 - Persistent vector database
 - Distributed Redis cache
 - Tenant isolation
@@ -591,3 +621,9 @@ The current demo does not include:
 - Production Kubernetes configuration
 - Real employee records
 - Real certification policies
+
+The PostgreSQL path demonstrates durable checkpoints and transactional,
+idempotent enrollment writes, but it is still an integration-demo boundary.
+Production deployment also needs managed backups, credential rotation,
+tenant-aware row security, migration promotion, capacity testing, and disaster
+recovery procedures.

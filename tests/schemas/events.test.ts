@@ -266,6 +266,15 @@ describe("agent event validation", () => {
     expect(
       isAgentEventPayload({
         type: "error",
+        code: "PERSISTENCE_UNAVAILABLE",
+        message: "Durable persistence is temporarily unavailable.",
+        retryable: true,
+      }),
+    ).toBe(true);
+
+    expect(
+      isAgentEventPayload({
+        type: "error",
         code: "INTERNAL_STACK_TRACE",
         message: "The workflow failed.",
         retryable: false,
