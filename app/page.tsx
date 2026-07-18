@@ -26,7 +26,7 @@ export default function HomePage() {
               </p>
 
               <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
-                Interview demo
+                v0.2
               </span>
             </div>
 
