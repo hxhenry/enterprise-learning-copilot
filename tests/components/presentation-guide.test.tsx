@@ -14,6 +14,7 @@ describe("PresentationGuide", () => {
     render(
       <PresentationGuide
         disabled={false}
+        selectedPrompt=""
         onSelectPrompt={() => undefined}
       />,
     );
@@ -48,6 +49,7 @@ describe("PresentationGuide", () => {
     render(
       <PresentationGuide
         disabled={false}
+        selectedPrompt=""
         onSelectPrompt={onSelectPrompt}
       />,
     );
@@ -62,11 +64,40 @@ describe("PresentationGuide", () => {
     expect(onSelectPrompt).toHaveBeenCalledWith(scenario.prompt);
   });
 
+  it("marks the composer-matching scenario as loaded", () => {
+    const scenario = PRESENTATION_SCENARIOS[2];
+
+    render(
+      <PresentationGuide
+        disabled={false}
+        selectedPrompt={scenario.prompt}
+        onSelectPrompt={() => undefined}
+      />,
+    );
+
+    const selectedButton = screen.getByRole("button", {
+      name: `Run demo scenario: ${scenario.title}`,
+    });
+
+    expect(selectedButton).toHaveAttribute("aria-pressed", "true");
+    expect(within(selectedButton).getByText("Loaded")).toBeInTheDocument();
+
+    const unselectedButton = screen.getByRole("button", {
+      name: `Run demo scenario: ${PRESENTATION_SCENARIOS[0].title}`,
+    });
+
+    expect(unselectedButton).toHaveAttribute("aria-pressed", "false");
+  });
+
   it("disables every scenario and explains why", () => {
     const onSelectPrompt = vi.fn();
 
     render(
-      <PresentationGuide disabled onSelectPrompt={onSelectPrompt} />,
+      <PresentationGuide
+        disabled
+        selectedPrompt=""
+        onSelectPrompt={onSelectPrompt}
+      />,
     );
 
     const explanation =

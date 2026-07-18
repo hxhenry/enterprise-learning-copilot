@@ -3,6 +3,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import {
   afterEach,
@@ -135,19 +136,23 @@ describe("ChatContainer presentation flow", () => {
     render(<ChatContainer />);
 
     expect(
-      screen.getByText("Memory demo · process-local"),
+      screen.getByText("Local demo · process memory"),
     ).toBeInTheDocument();
 
     const composer = screen.getByRole("textbox", {
       name: "Ask the learning copilot a question",
     });
 
-    fireEvent.click(
-      screen.getByRole("button", { name: new RegExp(scenario.title, "i") }),
-    );
+    const scenarioButton = screen.getByRole("button", {
+      name: new RegExp(scenario.title, "i"),
+    });
+
+    fireEvent.click(scenarioButton);
 
     expect(composer).toHaveValue(scenario.prompt);
     expect(composer).toHaveFocus();
+    expect(scenarioButton).toHaveAttribute("aria-pressed", "true");
+    expect(within(scenarioButton).getByText("Loaded")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 

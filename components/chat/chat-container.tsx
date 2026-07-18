@@ -594,13 +594,13 @@ export function ChatContainer() {
             <div className="flex flex-wrap items-center justify-end gap-2">
               <span
                 title="Workflow checkpoints and enrollment records are stored only in this Node.js process and reset when the server restarts."
-                className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700"
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700"
               >
                 <span
                   aria-hidden="true"
-                  className="h-2 w-2 rounded-full bg-amber-500"
+                  className="h-2 w-2 rounded-full bg-blue-500"
                 />
-                Memory demo · process-local
+                Local demo · process memory
               </span>
 
               <button
@@ -660,6 +660,7 @@ export function ChatContainer() {
 
       <PresentationGuide
         disabled={isStreaming || pendingApproval !== null}
+        selectedPrompt={input}
         onSelectPrompt={handleSelectPrompt}
       />
     </div>

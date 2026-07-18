@@ -32,8 +32,8 @@ Before the presentation:
    ```
 
 4. Open [http://localhost:3000](http://localhost:3000).
-5. Confirm the page shows **v0.2 · Presentation ready** and the **Memory
-   demo · process-local** status.
+5. Confirm the page shows **Interview demo** and the **Local demo · process
+   memory** status.
 6. Keep the terminal visible in another window so structured logs can be shown
    if asked.
 
@@ -250,7 +250,7 @@ integrations.
 Use this exact framing if the interviewer asks whether the demo is production
 ready:
 
-> It is presentation-ready and production-shaped, but it is not a production
+> It is a presentation-ready, pre-production integration demo, not a production
 > deployment. The AI, workflow, API, streaming, validation, approval, testing,
 > and React integration are implemented. Business data, checkpoints, retrieval
 > indexes, concurrency guards, and logs remain local to one application process.

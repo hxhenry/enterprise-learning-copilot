@@ -26,7 +26,7 @@ export default function HomePage() {
               </p>
 
               <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
-                v0.2 · Presentation ready
+                Interview demo
               </span>
             </div>
 
@@ -35,9 +35,9 @@ export default function HomePage() {
             </h1>
 
             <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-700 sm:text-base">
-              A production-shaped, pre-production demo of streamed agent
-              workflows, trusted experience components, grounded answers, and
-              approval-gated writes.
+              A presentation-ready, pre-production integration demo of
+              streamed agent workflows, trusted experience components,
+              grounded answers, and approval-gated writes.
             </p>
 
             <ul
