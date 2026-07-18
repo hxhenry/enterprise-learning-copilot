@@ -1,4 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { PresentationGuide } from "@/components/demo/presentation-guide";
@@ -17,14 +22,22 @@ describe("PresentationGuide", () => {
       screen.getByRole("heading", { name: "Guided demo" }),
     ).toBeInTheDocument();
 
-    for (const scenario of PRESENTATION_SCENARIOS) {
+    const scenarioItems = within(screen.getByRole("list")).getAllByRole(
+      "listitem",
+    );
+
+    expect(scenarioItems).toHaveLength(PRESENTATION_SCENARIOS.length);
+
+    for (const [index, scenario] of PRESENTATION_SCENARIOS.entries()) {
       expect(
-        screen.getByRole("button", {
+        within(scenarioItems[index]).getByRole("button", {
           name: `Run demo scenario: ${scenario.title}`,
         }),
       ).toBeEnabled();
 
-      expect(screen.getByText(`“${scenario.prompt}”`)).toBeInTheDocument();
+      expect(
+        within(scenarioItems[index]).getByText(`“${scenario.prompt}”`),
+      ).toBeInTheDocument();
     }
   });
 

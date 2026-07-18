@@ -53,35 +53,36 @@ export function PresentationGuide({
         </p>
       ) : null}
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+      <ol className="mt-5 space-y-3">
         {PRESENTATION_SCENARIOS.map((scenario) => (
-          <button
-            key={scenario.id}
-            type="button"
-            aria-label={`Run demo scenario: ${scenario.title}`}
-            aria-describedby={disabled ? disabledDescriptionId : undefined}
-            disabled={disabled}
-            onClick={() => onSelectPrompt(scenario.prompt)}
-            className="group rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-indigo-300 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-slate-200 disabled:hover:bg-slate-50"
-          >
-            <span className="text-xs font-semibold uppercase tracking-wide text-indigo-600">
-              {scenario.step}
-            </span>
+          <li key={scenario.id}>
+            <button
+              type="button"
+              aria-label={`Run demo scenario: ${scenario.title}`}
+              aria-describedby={disabled ? disabledDescriptionId : undefined}
+              disabled={disabled}
+              onClick={() => onSelectPrompt(scenario.prompt)}
+              className="group w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-indigo-300 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-slate-200 disabled:hover:bg-slate-50"
+            >
+              <span className="text-xs font-semibold uppercase tracking-wide text-indigo-600">
+                {scenario.step}
+              </span>
 
-            <span className="mt-2 block font-semibold text-slate-900">
-              {scenario.title}
-            </span>
+              <span className="mt-2 block font-semibold text-slate-900">
+                {scenario.title}
+              </span>
 
-            <span className="mt-1 block text-sm leading-5 text-slate-600">
-              {scenario.description}
-            </span>
+              <span className="mt-1 block text-sm leading-5 text-slate-600">
+                {scenario.description}
+              </span>
 
-            <span className="mt-3 block rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs leading-5 text-slate-500 transition group-hover:border-indigo-200">
-              “{scenario.prompt}”
-            </span>
-          </button>
+              <span className="mt-3 block rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs leading-5 text-slate-500 transition group-hover:border-indigo-200">
+                “{scenario.prompt}”
+              </span>
+            </button>
+          </li>
         ))}
-      </div>
+      </ol>
     </section>
   );
 }
