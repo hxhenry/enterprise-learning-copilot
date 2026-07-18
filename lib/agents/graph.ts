@@ -32,7 +32,7 @@ import {
 } from "@/lib/security/authorization";
 import { createAnalyticsTools } from "@/lib/tools/analytics-tools";
 import { createCertificationTools } from "@/lib/tools/certification-tools";
-import { createRagTools } from "@/lib/tools/rag-tools";
+import { createRagToolSession } from "@/lib/tools/rag-tools";
 import { resolveRequestedCourse } from "@/lib/agents/course-resolution";
 import type { LearningGraphRepositories } from "@/lib/repositories/contracts";
 import { inMemoryLearningGraphRepositories } from "@/lib/repositories/in-memory-repositories";
@@ -142,18 +142,26 @@ export function createLearningGraph({
   };
 
   const tutorNode: typeof LearningGraphState.Node = async (state) => {
+    const ragSession = createRagToolSession(
+      reportEvent,
+      repositories.knowledge,
+    );
     const answer = await runAgent({
       agentId: "tutor",
       agentName: AGENT_REGISTRY.tutor.name,
       systemPrompt: TUTOR_AGENT_PROMPT,
       conversation: state.conversation,
       tools: {
-        ...createRagTools(reportEvent, repositories.knowledge),
+        ...ragSession.tools,
       },
       reportEvent,
       abortSignal,
       runContext,
     });
+
+    if (!abortSignal.aborted) {
+      ragSession.publishCitedSources(answer);
+    }
 
     return {
       finalAnswer: answer,
@@ -167,6 +175,10 @@ export function createLearningGraph({
   };
 
   const certificationNode: typeof LearningGraphState.Node = async (state) => {
+    const ragSession = createRagToolSession(
+      reportEvent,
+      repositories.knowledge,
+    );
     const answer = await runAgent({
       agentId: "certification",
       agentName: AGENT_REGISTRY.certification.name,
@@ -174,12 +186,16 @@ export function createLearningGraph({
       conversation: state.conversation,
       tools: {
         ...createCertificationTools(reportEvent, repositories.learning),
-        ...createRagTools(reportEvent, repositories.knowledge),
+        ...ragSession.tools,
       },
       reportEvent,
       abortSignal,
       runContext,
     });
+
+    if (!abortSignal.aborted) {
+      ragSession.publishCitedSources(answer);
+    }
 
     return {
       finalAnswer: answer,

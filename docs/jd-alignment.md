@@ -25,7 +25,7 @@ production system.
 
 | Preferred area | Evidence in this branch | Alignment |
 | --- | --- | --- |
-| RAG | Local Markdown, LangChain splitting, OpenAI embeddings, memory vector search, retrieved passages, citation IDs, and source cards in [`lib/rag/course-knowledge.ts`](../lib/rag/course-knowledge.ts) and [`lib/tools/rag-tools.ts`](../lib/tools/rag-tools.ts) | **Implemented for the demo.** The index is process-local and the corpus is intentionally small. |
+| RAG | Local Markdown, LangChain splitting, OpenAI embeddings, score-gated memory-vector search, run-scoped citation IDs, and cited-only source cards in [`lib/rag/course-knowledge.ts`](../lib/rag/course-knowledge.ts) and [`lib/tools/rag-tools.ts`](../lib/tools/rag-tools.ts) | **Implemented for the demo.** The index is process-local and the corpus is intentionally small. |
 | Prompt engineering | Separate router, tutor, certification, and analytics instructions in [`lib/prompts/learning-copilot.ts`](../lib/prompts/learning-copilot.ts), including tool rules and grounded-answer constraints | **Implemented and inspectable.** Prompt evaluation/version management is future work. |
 | Tool calling | Zod-validated tools under `lib/tools`; deterministic repository results; per-agent tool allow-lists; activity events streamed to the UI | **Implemented.** Read tools are model-callable; enrollment stays server-controlled. |
 | ClickHouse | No runtime integration | **Roadmap only** for high-volume agent/product analytics if justified. |

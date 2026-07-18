@@ -34,6 +34,13 @@ const SOURCE_DOCUMENTS: SourceDocumentConfig[] = [
   },
 ];
 
+/*
+ * MemoryVectorStore uses cosine similarity by default, where higher is more
+ * relevant. Re-evaluate this corpus-specific threshold when the documents or
+ * embedding model change.
+ */
+export const COURSE_KNOWLEDGE_MIN_SIMILARITY = 0.5;
+
 let vectorStorePromise: Promise<MemoryVectorStore> | null = null;
 
 async function loadSourceDocuments(): Promise<Document[]> {
@@ -101,25 +108,37 @@ export async function searchCourseKnowledge(
 ): Promise<RetrievedKnowledge[]> {
   const vectorStore = await getVectorStore();
 
-  const documents = await vectorStore.similaritySearch(
+  const scoredDocuments = await vectorStore.similaritySearchWithScore(
     query,
     limit,
   );
 
-  return documents.map((document, index) => ({
-    citationId: `S${index + 1}`,
-    title:
-      typeof document.metadata.title === "string"
-        ? document.metadata.title
-        : "Unknown document",
-    source:
-      typeof document.metadata.source === "string"
-        ? document.metadata.source
-        : "unknown",
-    category:
-      typeof document.metadata.category === "string"
-        ? document.metadata.category
-        : "unknown",
-    content: document.pageContent,
-  }));
+  return selectRelevantCourseKnowledge(scoredDocuments);
+}
+
+export function selectRelevantCourseKnowledge(
+  scoredDocuments: ReadonlyArray<readonly [Document, number]>,
+  minSimilarity = COURSE_KNOWLEDGE_MIN_SIMILARITY,
+): RetrievedKnowledge[] {
+  return scoredDocuments
+    .filter(
+      ([, similarity]) =>
+        Number.isFinite(similarity) && similarity >= minSimilarity,
+    )
+    .map(([document], index) => ({
+      citationId: `S${index + 1}`,
+      title:
+        typeof document.metadata.title === "string"
+          ? document.metadata.title
+          : "Unknown document",
+      source:
+        typeof document.metadata.source === "string"
+          ? document.metadata.source
+          : "unknown",
+      category:
+        typeof document.metadata.category === "string"
+          ? document.metadata.category
+          : "unknown",
+      content: document.pageContent,
+    }));
 }

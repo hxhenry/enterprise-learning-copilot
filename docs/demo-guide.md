@@ -66,8 +66,18 @@ Expected behavior:
 What to say:
 
 > The model chooses an allowed retrieval tool, but the server owns that tool and
-> its Zod-validated input. LangChain chunks and embeds the local Markdown, then
-> the UI renders the retrieved sources as typed data—not model-generated JSX.
+> its Zod-validated input. LangChain chunks and embeds the local Markdown,
+> low-relevance matches are rejected, and the UI renders only passages cited by
+> the completed answer as typed data—not model-generated JSX.
+
+Optional grounding-boundary check:
+
+> What is React `useRef`? Find related references.
+
+The internal corpus contains no React material. The expected result is no
+source card and a transparent statement that any general explanation comes
+from model knowledge rather than the internal documents. This demonstrates
+that “nearest passage” is not automatically treated as “supporting evidence.”
 
 ### 2. Certification progress and tool calling
 
@@ -209,9 +219,12 @@ data. React maps each known block kind to a trusted component.
 ### How is hallucination reduced?
 
 Authoritative progress and analytics come from deterministic tools, and
-internal knowledge questions use retrieved passages with visible sources. RAG
-reduces risk but does not prove every generated sentence, so relevance gating
-and citation verification remain production improvements.
+internal knowledge questions use score-gated passages. Low-relevance matches
+are discarded, and the source card shows only retrieved citation IDs that the
+answer actually used. An out-of-scope search is labelled as general model
+knowledge instead of being attributed to local documents. This still does not
+prove that every cited sentence is entailed by its passage, so claim-level
+verification remains a production improvement.
 
 ### What is actually persistent?
 

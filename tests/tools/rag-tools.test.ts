@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { KnowledgeRepository } from "@/lib/repositories/contracts";
 import type { AgentEventPayload } from "@/lib/schemas/events";
-import { createRagTools } from "@/lib/tools/rag-tools";
+import {
+  createRagToolSession,
+  extractCitationIds,
+} from "@/lib/tools/rag-tools";
 import { executeTool } from "@/tests/tools/tool-test-helper";
 
 describe("RAG tools", () => {
@@ -10,7 +13,7 @@ describe("RAG tools", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns cited passages and a trusted source block", async () => {
+  it("publishes only passages cited by the completed answer", async () => {
     const events: AgentEventPayload[] = [];
     const repository: KnowledgeRepository = {
       searchCourseKnowledge: vi.fn(async () => [
@@ -21,9 +24,16 @@ describe("RAG tools", () => {
           category: "course",
           content: "Least privilege limits access to what a user needs.",
         },
+        {
+          citationId: "repository-S2",
+          title: "Cloud Security Fundamentals",
+          source: "cloud-security-fundamentals.md",
+          category: "course",
+          content: "Security groups should permit only required traffic.",
+        },
       ]),
     };
-    const tools = createRagTools(
+    const session = createRagToolSession(
       (event) => events.push(event),
       repository,
     );
@@ -31,61 +41,124 @@ describe("RAG tools", () => {
     const result = await executeTool<
       { query: string; limit: number },
       { found: boolean; passages: Array<{ citationId: string }> }
-    >(tools.searchCourseKnowledge, {
+    >(session.tools.searchCourseKnowledge, {
       query: "least privilege",
       limit: 3,
     });
 
     expect(result).toMatchObject({
       found: true,
-      passages: [{ citationId: "S1" }],
+      passages: [{ citationId: "S1" }, { citationId: "S2" }],
     });
     expect(
       events.find((event) => event.type === "experience"),
-    ).toMatchObject({
+    ).toBeUndefined();
+
+    session.publishCitedSources(
+      "Required traffic should be narrowly scoped [S2]. Unknown [S99].",
+    );
+
+    expect(events.find((event) => event.type === "experience")).toMatchObject({
       block: {
         kind: "sources",
         sources: [
           {
-            citationId: "S1",
-            title: "Identity and Access Management",
+            citationId: "S2",
+            title: "Cloud Security Fundamentals",
           },
         ],
       },
     });
   });
 
-  it("handles empty and failed retrieval without leaking internals", async () => {
+  it("does not attach local references to an out-of-domain useRef answer", async () => {
+    const events: AgentEventPayload[] = [];
+    const session = createRagToolSession(
+      (event) => events.push(event),
+      {
+        searchCourseKnowledge: async () => [],
+      },
+    );
+
+    const result = await executeTool<
+      { query: string; limit: number },
+      { found: boolean; passages: unknown[]; message: string }
+    >(session.tools.searchCourseKnowledge, {
+      query: "What is React useRef?",
+      limit: 3,
+    });
+
+    session.publishCitedSources(
+      "The internal documents do not cover useRef. General explanation [S1].",
+    );
+
+    expect(result).toMatchObject({
+      found: false,
+      passages: [],
+      message: expect.stringContaining(
+        "internal learning documents do not cover this topic",
+      ),
+    });
+    expect(events.some((event) => event.type === "experience")).toBe(false);
+  });
+
+  it("assigns unique citation IDs across repeated searches", async () => {
+    const session = createRagToolSession(() => undefined, {
+      searchCourseKnowledge: async (query) => [
+        {
+          citationId: "repository-S1",
+          title: query,
+          source: `${query}.md`,
+          category: "course",
+          content: `${query} content`,
+        },
+      ],
+    });
+
+    const firstResult = await executeTool<
+      { query: string; limit: number },
+      { passages: Array<{ citationId: string }> }
+    >(session.tools.searchCourseKnowledge, {
+      query: "least privilege",
+      limit: 1,
+    });
+    const secondResult = await executeTool<
+      { query: string; limit: number },
+      { passages: Array<{ citationId: string }> }
+    >(session.tools.searchCourseKnowledge, {
+      query: "retake policy",
+      limit: 1,
+    });
+
+    expect(firstResult.passages[0]?.citationId).toBe("S1");
+    expect(secondResult.passages[0]?.citationId).toBe("S2");
+  });
+
+  it("extracts ordered, unique inline citation IDs", () => {
+    expect(
+      extractCitationIds(
+        "First claim [S2, S1], repeated [S2], and separate [S3; S4].",
+      ),
+    ).toEqual(["S2", "S1", "S3", "S4"]);
+  });
+
+  it("handles failed retrieval without leaking internals", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
 
-    const emptyTools = createRagTools(() => undefined, {
-      searchCourseKnowledge: async () => [],
-    });
-    const failedTools = createRagTools(() => undefined, {
+    const failedSession = createRagToolSession(() => undefined, {
       searchCourseKnowledge: async () => {
         throw new Error("embedding-provider-secret");
       },
     });
 
-    const emptyResult = await executeTool<
-      { query: string; limit: number },
-      { found: boolean; passages: unknown[] }
-    >(emptyTools.searchCourseKnowledge, {
-      query: "unknown topic",
-      limit: 3,
-    });
     const failedResult = await executeTool<
       { query: string; limit: number },
       { found: boolean; message: string }
-    >(failedTools.searchCourseKnowledge, {
+    >(failedSession.tools.searchCourseKnowledge, {
       query: "least privilege",
       limit: 3,
     });
 
-    expect(emptyResult).toMatchObject({
-      found: false,
-      passages: [],
-    });
     expect(failedResult).toEqual({
       found: false,
       query: "least privilege",

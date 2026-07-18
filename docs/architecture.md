@@ -196,24 +196,36 @@ OpenAI embeddings
 LangChain MemoryVectorStore
               |
               v
-Semantic similarity search
+Scored semantic similarity search
               |
               v
-Passages + citation IDs + source experience block
+Minimum-relevance filter
               |
               v
-Grounded model answer
+Relevant passages + run-scoped citation IDs
+              |
+              v
+Model answer with inline citations
+              |
+              v
+Cited-ID validation + structured source block
 ```
 
 The vector index is built lazily and cached for the life of the process. The
 available sources cover cloud-security fundamentals, identity and access
 management, and certification policy.
 
-RAG reduces unsupported answers but does not automatically guarantee that each
-generated statement is supported. This demo asks the model to cite retrieved
-passages and displays their excerpts. A production system should additionally
-apply relevance thresholds, access filters, citation verification, and a clear
-out-of-scope fallback.
+The retriever discards candidates below a named cosine-similarity threshold. If
+none remain, the tool reports that the internal corpus does not cover the topic
+and instructs the agent to label any general explanation as model knowledge.
+Retrieved passages are held for the current agent run; after generation, only
+valid citation IDs that actually appear in the answer are rendered as source
+evidence.
+
+These checks prevent nearest-but-irrelevant passages from automatically
+becoming citations, but they do not prove claim-level entailment. A production
+system should calibrate thresholds against a larger evaluation set and add
+tenant access filters, reranking, and claim-to-passage verification.
 
 ## 8. Human approval workflow
 

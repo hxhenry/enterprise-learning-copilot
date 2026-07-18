@@ -16,7 +16,7 @@ requiring a database or other infrastructure.
 | Multi-agent routing | A LangGraph router selects tutor, certification, or analytics workflows |
 | Streaming UI | Next.js route handlers emit typed protocol-v1 events over SSE |
 | Tool calling | Agents call runtime-validated learning, analytics, and knowledge tools |
-| RAG | Local Markdown is chunked, embedded, searched, and returned with source cards |
+| RAG | Local Markdown is chunked, embedded, score-gated, and shown only when the answer cites it |
 | Experience layer | React renders trusted progress, analytics, source, activity, and approval components |
 | Human in the loop | Enrollment pauses at a LangGraph interrupt and resumes only after an explicit decision |
 | Workflow state | LangGraph `MemorySaver` retains the conversation and pending approval while the process lives |

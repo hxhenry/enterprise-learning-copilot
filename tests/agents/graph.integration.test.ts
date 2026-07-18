@@ -14,9 +14,13 @@ import {
 } from "@/lib/agents/graph";
 import type { AgentId } from "@/lib/agents/registry";
 import type { RunStreamingAgentOptions } from "@/lib/agents/run-streaming-agent";
-import type { EnrollmentRepository } from "@/lib/repositories/contracts";
+import type {
+  EnrollmentRepository,
+  KnowledgeRepository,
+} from "@/lib/repositories/contracts";
 import type { AgentEventPayload } from "@/lib/schemas/events";
 import { getAuthenticatedActor } from "@/lib/security/authorization";
+import { executeTool } from "@/tests/tools/tool-test-helper";
 
 const actor = getAuthenticatedActor();
 
@@ -158,6 +162,94 @@ describe("learning graph integration", () => {
       );
     },
   );
+
+  it("publishes only cited RAG evidence after the answer tokens", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    const events: AgentEventPayload[] = [];
+    const knowledge: KnowledgeRepository = {
+      searchCourseKnowledge: async () => [
+        {
+          citationId: "repository-S1",
+          title: "Identity and Access Management",
+          source: "identity-access-management.md",
+          category: "course",
+          content: "Least privilege grants only required access.",
+        },
+        {
+          citationId: "repository-S2",
+          title: "Cloud Security Fundamentals",
+          source: "cloud-security-fundamentals.md",
+          category: "course",
+          content: "Cloud networks should limit unnecessary traffic.",
+        },
+      ],
+    };
+    const runAgent: LearningGraphDependencies["runAgent"] = async (
+      options,
+    ) => {
+      await executeTool(options.tools.searchCourseKnowledge, {
+        query: "least privilege",
+        limit: 3,
+      });
+      options.reportEvent({
+        type: "token",
+        content: "Least privilege limits access [S1].",
+      });
+
+      return "Least privilege limits access [S1].";
+    };
+
+    const graph = createLearningGraph({
+      actor,
+      abortSignal: new AbortController().signal,
+      reportEvent: (event) => events.push(event),
+      runContext: {
+        requestId: "request-grounding",
+        agentRunId: "run-grounding",
+        threadId: "thread-grounding",
+        operation: "chat",
+      },
+      dependencies: {
+        routeRequest: async () => ({
+          agentId: "tutor",
+          requestKind: "answer",
+          reason: "The user asked a course-content question.",
+        }),
+        runAgent,
+        checkpointer: new MemorySaver(),
+        repositories: {
+          knowledge,
+        },
+      },
+    });
+
+    await graph.invoke(
+      createInitialState("Explain least privilege"),
+      createConfig("thread-grounding"),
+    );
+
+    const sourceEvent = events.find(
+      (event) => event.type === "experience",
+    );
+    const tokenIndex = events.findIndex((event) => event.type === "token");
+    const sourceIndex = events.findIndex(
+      (event) => event.type === "experience",
+    );
+
+    expect(sourceEvent).toMatchObject({
+      block: {
+        kind: "sources",
+        sources: [
+          {
+            citationId: "S1",
+            source: "identity-access-management.md",
+          },
+        ],
+      },
+    });
+    expect(sourceIndex).toBeGreaterThan(tokenIndex);
+  });
 
   it("interrupts enrollment and resumes the same checkpoint exactly once", async () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
