@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased - Presentation-ready v0.2
+
+### Added
+
+- A guided four-scenario presentation panel covering RAG tutoring,
+  certification planning, analytics, and approval-gated enrollment.
+- A clear memory-demo status indicator and a browser-side new-conversation
+  control.
+- Presentation, architecture, and job-description alignment guides.
+- Approval activity in the agent timeline and live completion announcements.
+
+### Changed
+
+- Refined the page header, capability labels, responsive layout, learning
+  cards, accessibility behavior, and presentation copy.
+- Reframed the repository as a focused, memory-only AI integration demo.
+- Separated implemented capabilities from the production roadmap; PostgreSQL,
+  Redis, MongoDB, ClickHouse, Kubernetes, and OpenShift are future options, not
+  current runtime dependencies.
+
+### Scope
+
+- All learning, analytics, enrollment, retrieval-index, and workflow state
+  remains process-local.
+- The new-conversation control resets browser conversation state but does not
+  erase server-side in-memory enrollment records.
+
 ## 0.2.0 - 2026-07-15
 
 ### Added
@@ -17,8 +44,8 @@
   repository integration tests.
 - Native route-handler SSE tests, real LangGraph interrupt/resume tests, AI SDK
   mock-model tests, and tool contract tests.
-- Idempotent approval replay with durable resolved-action state and exactly-once
-  enrollment verification.
+- Idempotent approval replay with checkpointed resolved-action state and
+  duplicate-enrollment verification within the current process.
 - Enforced coverage thresholds in the complete quality gate.
 
 ### Changed
