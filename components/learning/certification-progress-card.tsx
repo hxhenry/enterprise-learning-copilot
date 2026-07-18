@@ -73,9 +73,15 @@ export function CertificationProgressCard({
           </h3>
         </div>
 
-        <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">
-          {block.completionPercent}%
-        </span>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+            {block.remainingCourses.length} remaining
+          </span>
+
+          <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">
+            {block.completionPercent}%
+          </span>
+        </div>
       </div>
 
       <div className="mt-4">

@@ -13,6 +13,7 @@ export function MessageBubble({
 
   return (
     <div
+      aria-label={`${isUser ? "You" : "Copilot"} message`}
       className={`flex w-full ${
         isUser ? "justify-end" : "justify-start"
       }`}
@@ -24,9 +25,24 @@ export function MessageBubble({
             : "border border-slate-200 bg-white text-slate-800"
         }`}
       >
+        <p
+          className={`mb-1 text-[0.6875rem] font-bold uppercase tracking-wide ${
+            isUser ? "text-white" : "text-blue-600"
+          }`}
+        >
+          {isUser ? "You" : "Copilot"}
+        </p>
+
         <p className="whitespace-pre-wrap">
           {message.content ||
             (isStreaming ? "Thinking..." : "No response received.")}
+
+          {isStreaming ? (
+            <span
+              aria-hidden="true"
+              className="ml-1 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-blue-500"
+            />
+          ) : null}
         </p>
       </div>
     </div>

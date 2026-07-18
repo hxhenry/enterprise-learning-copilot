@@ -28,6 +28,28 @@ const request: ApprovalRequest = {
 };
 
 describe("ApprovalRequestCard", () => {
+  it("announces and focuses the approval boundary", () => {
+    render(
+      <ApprovalRequestCard
+        request={request}
+        isSubmitting={false}
+        onDecision={() => undefined}
+      />,
+    );
+
+    const approvalRegion = screen.getByRole("region", {
+      name: "Approve course enrollment",
+    });
+
+    expect(approvalRegion).toHaveFocus();
+    expect(approvalRegion).toHaveAttribute("aria-busy", "false");
+    expect(
+      screen.getByText(
+        "No enrollment record is created until you approve this action.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("shows the action and its impact", () => {
     render(
       <ApprovalRequestCard
@@ -106,6 +128,12 @@ describe("ApprovalRequestCard", () => {
         onDecision={() => undefined}
       />,
     );
+
+    expect(
+      screen.getByRole("region", {
+        name: "Approve course enrollment",
+      }),
+    ).toHaveAttribute("aria-busy", "true");
 
     expect(
       screen.getByRole("button", {
