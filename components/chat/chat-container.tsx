@@ -46,9 +46,11 @@ export function ChatContainer() {
     useState("");
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  // LangGraph requires one stable thread ID across requests and approval resume.
   const threadIdRef = useRef<string | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const handledComposerFocusRequestRef = useRef(0);
+  // Mirror token text so `done` can announce the exact completed response.
   const streamedResponseTextRef = useRef(new Map<string, string>());
 
   useEffect(() => {
@@ -147,6 +149,7 @@ export function ChatContainer() {
 
       let matchingIndex = -1;
 
+      // Repeated calls share a tool name, so complete the newest open instance.
       for (let index = activities.length - 1; index >= 0; index -= 1) {
         const activity = activities[index];
 
@@ -558,6 +561,7 @@ export function ChatContainer() {
       return;
     }
 
+    // This resets browser state only; process-local business records remain.
     threadIdRef.current = null;
     setMessages(initialMessages);
     setInput("");

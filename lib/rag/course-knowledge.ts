@@ -41,6 +41,11 @@ const SOURCE_DOCUMENTS: SourceDocumentConfig[] = [
  */
 export const COURSE_KNOWLEDGE_MIN_SIMILARITY = 0.5;
 
+/*
+ * Memoizing the in-flight build lets concurrent first searches share one index.
+ * The index is process-local, and a rejected build is cleared so a transient
+ * embedding failure does not permanently poison later requests.
+ */
 let vectorStorePromise: Promise<MemoryVectorStore> | null = null;
 
 async function loadSourceDocuments(): Promise<Document[]> {

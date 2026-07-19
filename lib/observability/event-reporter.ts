@@ -25,6 +25,11 @@ export function createObservedEventReporter({
   emit: AgentEventEmitter;
   now?: () => Date;
 }): AgentEventReporter {
+  /*
+   * A stack preserves separate timings when the same named tool starts more
+   * than once. Durations are best-effort because payloads do not expose a tool
+   * call ID.
+   */
   const toolStartTimes =
     new Map<string, number[]>();
   let sequence = 0;
@@ -159,6 +164,7 @@ export function createObservedEventReporter({
 
     sequence += 1;
 
+    // One reporter owns the envelope so consumers can require gap-free order.
     emit({
       protocolVersion: AGENT_EVENT_PROTOCOL_VERSION,
       sequence,

@@ -35,6 +35,11 @@ export async function routeLearningRequest(
   abortSignal: AbortSignal,
   model: LanguageModel = getLearningModel(),
 ): Promise<RouterDecision> {
+  /*
+   * The current user turn is supplied separately below. Excluding it here
+   * avoids duplicating the request, while the six-turn window bounds routing
+   * cost and limits stale context from influencing the decision.
+   */
   const previousConversation = conversation
     .slice(0, -1)
     .slice(-6)

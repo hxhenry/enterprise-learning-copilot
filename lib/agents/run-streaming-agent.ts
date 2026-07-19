@@ -71,6 +71,7 @@ export async function runStreamingAgent({
 
     tools,
 
+    // Bound autonomous tool loops even if the model repeatedly selects a tool.
     stopWhen: stepCountIs(6),
 
     maxOutputTokens: 1_200,
@@ -121,6 +122,7 @@ export async function runStreamingAgent({
     },
   });
 
+  // The same text is streamed to the browser and retained for graph state.
   let finalAnswer = "";
 
   for await (const textPart of result.textStream) {
@@ -149,6 +151,7 @@ export async function runStreamingAgent({
     return finalAnswer;
   }
 
+  // Preserve the provider failure instead of masking it as an empty response.
   if (providerError) {
     throw providerError;
   }

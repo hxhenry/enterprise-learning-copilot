@@ -82,6 +82,7 @@ export type ChatMessage = {
   experienceBlocks?: ExperienceBlock[];
 };
 
+// Increment this value for incompatible serialized protocol changes.
 export const AGENT_EVENT_PROTOCOL_VERSION = "1.0" as const;
 
 export const AGENT_ERROR_CODES = [
@@ -339,6 +340,10 @@ function isIsoTimestamp(value: unknown): value is string {
   );
 }
 
+/**
+ * Runtime validation is required because TypeScript types end at the SSE
+ * boundary.
+ */
 export function isAgentEvent(value: unknown): value is AgentEvent {
   if (!isRecord(value)) {
     return false;

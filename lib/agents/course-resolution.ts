@@ -36,6 +36,11 @@ export async function resolveRequestedCourse(
     );
   }
 
+  /*
+   * Enrollment targets stay server-resolved rather than model-selected. Recent
+   * context is consulted only after a direct match so follow-ups such as
+   * "enroll me in that course" can resolve deterministically.
+   */
   const directMatch = await repository.findCourse(userMessage);
 
   if (directMatch) {

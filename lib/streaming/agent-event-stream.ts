@@ -22,6 +22,11 @@ type ConsumeAgentEventStreamOptions = {
   onEvent: (event: AgentEvent) => void;
 };
 
+/**
+ * Consumes the SSE response as an untrusted protocol boundary. Schema,
+ * sequence, request, thread, run, and terminal checks prevent stale or
+ * cross-request events from being merged into the active conversation.
+ */
 export async function consumeAgentEventStream(
   response: Response,
   {

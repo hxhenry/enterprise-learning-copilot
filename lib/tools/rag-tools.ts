@@ -20,6 +20,7 @@ function toSourceExperienceItem(passage: RetrievedKnowledge) {
   };
 }
 
+/** Extracts only the supported inline citation syntax, preserving first use. */
 export function extractCitationIds(answer: string): string[] {
   const citationIds: string[] = [];
   const seen = new Set<string>();
@@ -42,6 +43,11 @@ export function createRagToolSession(
   reportEvent: AgentEventReporter,
   repository: KnowledgeRepository = inMemoryKnowledgeRepository,
 ) {
+  /*
+   * Repository-local IDs may restart at S1 on every search. Remapping them in
+   * this agent run prevents collisions when the model invokes retrieval more
+   * than once before producing its answer.
+   */
   const passagesByCitationId = new Map<string, RetrievedKnowledge>();
   let nextCitationNumber = 1;
 
@@ -128,6 +134,7 @@ export function createRagToolSession(
             passages,
           };
         } catch (error) {
+          // Provider details stay in server logs; tool output is model-visible.
           console.error("Course knowledge retrieval failed:", error);
 
           reportEvent({
@@ -150,6 +157,11 @@ export function createRagToolSession(
   return {
     tools,
     publishCitedSources(answer: string) {
+      /*
+       * Publication is intentionally deferred until generation completes.
+       * Intersecting answer citations with the run registry removes unused and
+       * fabricated IDs; it validates provenance, not claim-level entailment.
+       */
       const sources = extractCitationIds(answer)
         .map((citationId) => passagesByCitationId.get(citationId))
         .filter(

@@ -176,6 +176,10 @@ export async function POST(request: Request): Promise<Response> {
         }
 
         if (isInterrupted(result)) {
+          /*
+           * `done` terminates this HTTP stream only. LangGraph keeps the thread
+           * checkpoint paused so the approval route can resume the same action.
+           */
           const pendingInterrupt = result[INTERRUPT][0];
           const approvalRequest = pendingInterrupt?.value;
 

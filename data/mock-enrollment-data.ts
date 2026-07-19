@@ -9,6 +9,11 @@ export type {
   EnrollmentResult,
 } from "@/lib/domain/enrollment";
 
+/*
+ * Demo-only process state. The checks below express the repository idempotency
+ * contract but are not transactional; a production adapter must enforce both
+ * uniqueness rules in its storage layer.
+ */
 const enrollmentRecords: EnrollmentRecord[] = [];
 
 export function createCourseEnrollment({
@@ -29,6 +34,7 @@ export function createCourseEnrollment({
     };
   }
 
+  // A new action ID can still repeat an enrollment intent already completed.
   const existingEnrollment = enrollmentRecords.find(
     (record) =>
       record.userId === userId &&

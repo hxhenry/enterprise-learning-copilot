@@ -236,6 +236,7 @@ export function createLearningGraph({
   const prepareEnrollmentNode: typeof LearningGraphState.Node = async (
     state,
   ) => {
+    // A router/model decision never grants permission to enter a write flow.
     assertPermission(actor, "enrollment:request");
 
     const course = await resolveCourse(
@@ -336,6 +337,7 @@ export function createLearningGraph({
       throw new Error("The approval response was invalid.");
     }
 
+    // Bind the decision to both the checkpointed action and current actor.
     if (
       response.actionId !== pending.actionId ||
       response.decidedBy !== actor.userId
@@ -353,6 +355,11 @@ export function createLearningGraph({
   const executeEnrollmentNode: typeof LearningGraphState.Node = async (
     state,
   ) => {
+    /*
+     * Re-authorize after resume because a checkpoint can outlive its creating
+     * request. This deterministic node is deliberately not an LLM-callable
+     * write tool.
+     */
     assertPermission(actor, "enrollment:request");
 
     const pending = state.pendingEnrollment;
@@ -371,6 +378,7 @@ export function createLearningGraph({
       message: "Creating the approved enrollment record...",
     });
 
+    // The checkpointed action ID is the stable idempotency key across retries.
     const result = await repositories.enrollment.createCourseEnrollment({
       actionId: pending.actionId,
       userId: pending.userId,

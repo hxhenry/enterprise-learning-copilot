@@ -37,6 +37,10 @@ export interface AnalyticsRepository {
 }
 
 export interface EnrollmentRepository {
+  /**
+   * Implementations must atomically deduplicate retries by action ID and avoid
+   * duplicate enrollment for the same user/course pair.
+   */
   createCourseEnrollment(
     input: CreateEnrollmentInput,
   ): Promise<EnrollmentResult>;
@@ -46,6 +50,9 @@ export interface EnrollmentRepository {
 }
 
 export interface KnowledgeRepository {
+  /**
+   * An empty result means no passage satisfied the adapter's relevance policy.
+   */
   searchCourseKnowledge(
     query: string,
     limit?: number,

@@ -1,3 +1,8 @@
+/**
+ * Serializes operations that share a key while allowing unrelated keys to run
+ * concurrently. This queue is process-local; distributed deployments need a
+ * database constraint or distributed lock for the same guarantee.
+ */
 export class KeyedSerialExecutor {
   private readonly tails = new Map<string, Promise<void>>();
 
@@ -7,10 +12,13 @@ export class KeyedSerialExecutor {
     const released = new Promise<void>((resolve) => {
       release = resolve;
     });
+
+    // A failed predecessor must release ordering without poisoning later work.
     const currentTail = previousTail
       .catch(() => undefined)
       .then(() => released);
 
+    // Publish our tail before waiting so later callers queue behind this run.
     this.tails.set(key, currentTail);
 
     await previousTail.catch(() => undefined);
@@ -20,6 +28,7 @@ export class KeyedSerialExecutor {
     } finally {
       release();
 
+      // A later caller may already have installed a new tail for this key.
       if (this.tails.get(key) === currentTail) {
         this.tails.delete(key);
       }

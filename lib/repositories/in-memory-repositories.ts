@@ -21,6 +21,11 @@ import type {
   LearningRepository,
 } from "@/lib/repositories/contracts";
 
+/*
+ * These adapters preserve the same async contracts expected from durable
+ * stores, but their business state and vector index are isolated to one Node.js
+ * process. The knowledge adapter still calls the configured embedding provider.
+ */
 export const inMemoryLearningRepository: LearningRepository = {
   async findUserById(userId) {
     return findUserById(userId);

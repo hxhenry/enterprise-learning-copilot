@@ -19,6 +19,10 @@ import { encodeAgentEvent } from "@/lib/streaming/agent-event-stream";
 
 export const runtime = "nodejs";
 
+/*
+ * Prevent two requests from resuming the same action concurrently in this
+ * process. Durable adapters must still enforce idempotency across replicas.
+ */
 const approvalExecutions = new KeyedSerialExecutor();
 
 type ApprovalBody = {
@@ -128,6 +132,11 @@ export async function POST(request: Request): Promise<Response> {
             return;
           }
 
+          /*
+           * Hold graph events until terminal state is validated. Otherwise the
+           * client could observe a successful write before this route discovers
+           * an inconsistent checkpoint result.
+           */
           const bufferedEvents: AgentEventPayload[] = [];
           let resolutionReported = false;
 
