@@ -5,18 +5,15 @@ import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { getServerEnvironment } from "@/lib/config/server-environment";
+import type { RetrievedKnowledge } from "@/lib/domain/knowledge";
+
+export type { RetrievedKnowledge } from "@/lib/domain/knowledge";
+
 type SourceDocumentConfig = {
   fileName: string;
   title: string;
   category: "course" | "policy";
-};
-
-export type RetrievedKnowledge = {
-  citationId: string;
-  title: string;
-  source: string;
-  category: string;
-  content: string;
 };
 
 const SOURCE_DOCUMENTS: SourceDocumentConfig[] = [
@@ -37,6 +34,18 @@ const SOURCE_DOCUMENTS: SourceDocumentConfig[] = [
   },
 ];
 
+/*
+ * MemoryVectorStore uses cosine similarity by default, where higher is more
+ * relevant. Re-evaluate this corpus-specific threshold when the documents or
+ * embedding model change.
+ */
+export const COURSE_KNOWLEDGE_MIN_SIMILARITY = 0.5;
+
+/*
+ * Memoizing the in-flight build lets concurrent first searches share one index.
+ * The index is process-local, and a rejected build is cleared so a transient
+ * embedding failure does not permanently poison later requests.
+ */
 let vectorStorePromise: Promise<MemoryVectorStore> | null = null;
 
 async function loadSourceDocuments(): Promise<Document[]> {
@@ -74,9 +83,8 @@ async function buildVectorStore(): Promise<MemoryVectorStore> {
   const documentChunks =
     await splitter.splitDocuments(rawDocuments);
 
-  const embeddingModel =
-    process.env.OPENAI_EMBEDDING_MODEL?.trim() ||
-    "text-embedding-3-small";
+  const { OPENAI_EMBEDDING_MODEL: embeddingModel } =
+    getServerEnvironment();
 
   const embeddings = new OpenAIEmbeddings({
     model: embeddingModel,
@@ -105,25 +113,37 @@ export async function searchCourseKnowledge(
 ): Promise<RetrievedKnowledge[]> {
   const vectorStore = await getVectorStore();
 
-  const documents = await vectorStore.similaritySearch(
+  const scoredDocuments = await vectorStore.similaritySearchWithScore(
     query,
     limit,
   );
 
-  return documents.map((document, index) => ({
-    citationId: `S${index + 1}`,
-    title:
-      typeof document.metadata.title === "string"
-        ? document.metadata.title
-        : "Unknown document",
-    source:
-      typeof document.metadata.source === "string"
-        ? document.metadata.source
-        : "unknown",
-    category:
-      typeof document.metadata.category === "string"
-        ? document.metadata.category
-        : "unknown",
-    content: document.pageContent,
-  }));
+  return selectRelevantCourseKnowledge(scoredDocuments);
+}
+
+export function selectRelevantCourseKnowledge(
+  scoredDocuments: ReadonlyArray<readonly [Document, number]>,
+  minSimilarity = COURSE_KNOWLEDGE_MIN_SIMILARITY,
+): RetrievedKnowledge[] {
+  return scoredDocuments
+    .filter(
+      ([, similarity]) =>
+        Number.isFinite(similarity) && similarity >= minSimilarity,
+    )
+    .map(([document], index) => ({
+      citationId: `S${index + 1}`,
+      title:
+        typeof document.metadata.title === "string"
+          ? document.metadata.title
+          : "Unknown document",
+      source:
+        typeof document.metadata.source === "string"
+          ? document.metadata.source
+          : "unknown",
+      category:
+        typeof document.metadata.category === "string"
+          ? document.metadata.category
+          : "unknown",
+      content: document.pageContent,
+    }));
 }

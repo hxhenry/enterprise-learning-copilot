@@ -1,7 +1,12 @@
 import { Command, isInterrupted } from "@langchain/langgraph";
 
 import { createLearningGraph } from "@/lib/agents/graph";
-import type { AgentEvent } from "@/lib/schemas/events";
+import { KeyedSerialExecutor } from "@/lib/concurrency/keyed-serial-executor";
+import type {
+  AgentEvent,
+  AgentEventPayload,
+  AgentEventReporter,
+} from "@/lib/schemas/events";
 import { getAuthenticatedActor } from "@/lib/security/authorization";
 import { parseSafeIdentifier } from "@/lib/security/request-validation";
 
@@ -10,20 +15,21 @@ import { performance } from "node:perf_hooks";
 import { createObservedEventReporter } from "@/lib/observability/event-reporter";
 import { logError, logInfo } from "@/lib/observability/logger";
 import { createRunContext } from "@/lib/observability/run-context";
+import { encodeAgentEvent } from "@/lib/streaming/agent-event-stream";
 
 export const runtime = "nodejs";
+
+/*
+ * Prevent two requests from resuming the same action concurrently in this
+ * process. Durable adapters must still enforce idempotency across replicas.
+ */
+const approvalExecutions = new KeyedSerialExecutor();
 
 type ApprovalBody = {
   threadId?: unknown;
   actionId?: unknown;
   approved?: unknown;
 };
-
-const encoder = new TextEncoder();
-
-function encodeEvent(event: AgentEvent): Uint8Array {
-  return encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
-}
 
 export async function POST(request: Request): Promise<Response> {
   let body: ApprovalBody;
@@ -75,7 +81,7 @@ export async function POST(request: Request): Promise<Response> {
         }
 
         try {
-          controller.enqueue(encodeEvent(event));
+          controller.enqueue(encodeAgentEvent(event));
           return true;
         } catch {
           isClosed = true;
@@ -119,38 +125,103 @@ export async function POST(request: Request): Promise<Response> {
             : "Cancelling the requested action...",
         });
 
-        const graph = createLearningGraph({
-          reportEvent,
-          abortSignal: request.signal,
-          actor,
-          runContext,
-        });
+        const approvalKey = JSON.stringify([threadId, actionId]);
 
-        const result = await graph.invoke(
-          new Command({
-            resume: {
+        await approvalExecutions.run(approvalKey, async () => {
+          if (request.signal.aborted) {
+            return;
+          }
+
+          /*
+           * Hold graph events until terminal state is validated. Otherwise the
+           * client could observe a successful write before this route discovers
+           * an inconsistent checkpoint result.
+           */
+          const bufferedEvents: AgentEventPayload[] = [];
+          let resolutionReported = false;
+
+          const reportGraphEvent: AgentEventReporter = (event) => {
+            if (event.type === "approval-resolved") {
+              if (
+                event.actionId !== actionId ||
+                event.approved !== approved
+              ) {
+                throw new Error(
+                  "The workflow resolved a different approval action.",
+                );
+              }
+
+              resolutionReported = true;
+            }
+
+            bufferedEvents.push(event);
+          };
+
+          const graph = createLearningGraph({
+            reportEvent: reportGraphEvent,
+            abortSignal: request.signal,
+            actor,
+            runContext,
+          });
+
+          const result = await graph.invoke(
+            new Command({
+              resume: {
+                actionId,
+                approved,
+                decidedBy: actor.userId,
+                reason: approved
+                  ? "Approved by the user."
+                  : "Rejected by the user.",
+              },
+            }),
+            {
+              configurable: {
+                thread_id: threadId,
+              },
+              recursionLimit: 12,
+            },
+          );
+
+          if (request.signal.aborted) {
+            return;
+          }
+
+          if (isInterrupted(result)) {
+            throw new Error(
+              "The approval workflow did not resume correctly.",
+            );
+          }
+
+          const expectedStatus = approved ? "approved" : "rejected";
+
+          if (
+            !result.finalAnswer.trim() ||
+            result.approvalStatus !== expectedStatus ||
+            result.resolvedEnrollmentActionId !== actionId ||
+            result.pendingEnrollment !== null
+          ) {
+            throw new Error(
+              "The approval workflow returned an inconsistent result.",
+            );
+          }
+
+          if (!resolutionReported) {
+            bufferedEvents.push({
+              type: "approval-resolved",
               actionId,
               approved,
-              decidedBy: actor.userId,
-              reason: approved
-                ? "Approved by the user."
-                : "Rejected by the user.",
-            },
-          }),
-          {
-            configurable: {
-              thread_id: threadId,
-            },
-            recursionLimit: 12,
-          },
-        );
+              message: result.finalAnswer,
+            });
+          }
+
+          for (const event of bufferedEvents) {
+            reportEvent(event);
+          }
+        });
 
         if (request.signal.aborted) {
           return;
-        }
-
-        if (isInterrupted(result)) {
-          throw new Error("The approval workflow did not resume correctly.");
         }
 
         reportEvent({
@@ -173,7 +244,9 @@ export async function POST(request: Request): Promise<Response> {
 
           reportEvent({
             type: "error",
+            code: "APPROVAL_EXECUTION_FAILED",
             message: "The approval decision could not be applied.",
+            retryable: false,
           });
         }
       } finally {
@@ -187,6 +260,7 @@ export async function POST(request: Request): Promise<Response> {
       "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
       "X-Accel-Buffering": "no",
+      "X-Content-Type-Options": "nosniff",
       "X-Request-Id": runContext.requestId,
     },
   });

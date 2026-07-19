@@ -28,8 +28,8 @@ describe("course resolution", () => {
     ).toBe(false);
   });
 
-  it("returns the next incomplete required course", () => {
-    const result = resolveRequestedCourse({
+  it("returns the next incomplete required course", async () => {
+    const result = await resolveRequestedCourse({
       userMessage:
         "Enroll me in my next required course.",
       conversation: [],
@@ -42,8 +42,8 @@ describe("course resolution", () => {
     });
   });
 
-  it("returns a directly named course", () => {
-    const result = resolveRequestedCourse({
+  it("returns a directly named course", async () => {
+    const result = await resolveRequestedCourse({
       userMessage:
         "Enroll me in Cloud Incident Response.",
       conversation: [],
@@ -56,7 +56,7 @@ describe("course resolution", () => {
     });
   });
 
-  it("can resolve a course from recent context", () => {
+  it("can resolve a course from recent context", async () => {
     const conversation: ConversationTurn[] = [
       {
         role: "assistant",
@@ -69,7 +69,7 @@ describe("course resolution", () => {
       },
     ];
 
-    const result = resolveRequestedCourse({
+    const result = await resolveRequestedCourse({
       userMessage: "Enroll me in that one.",
       conversation,
       userId: "user-001",
@@ -80,8 +80,8 @@ describe("course resolution", () => {
     });
   });
 
-  it("returns undefined when no course can be identified", () => {
-    const result = resolveRequestedCourse({
+  it("returns undefined when no course can be identified", async () => {
+    const result = await resolveRequestedCourse({
       userMessage:
         "Please enroll me in something interesting.",
       conversation: [],

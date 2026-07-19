@@ -1,9 +1,7 @@
-import {
-  findCourse,
-  getNextRequiredCourse,
-  type Course,
-} from "@/data/mock-learning-data";
 import type { ConversationTurn } from "@/lib/agents/state";
+import type { Course } from "@/lib/domain/learning";
+import type { LearningRepository } from "@/lib/repositories/contracts";
+import { inMemoryLearningRepository } from "@/lib/repositories/in-memory-repositories";
 
 const DEFAULT_CERTIFICATION_ID =
   "cert-cloud-security";
@@ -17,25 +15,33 @@ export function isNextCourseRequest(
   return NEXT_COURSE_PATTERN.test(message);
 }
 
-export function resolveRequestedCourse({
-  userMessage,
-  conversation,
-  userId,
-  certificationId = DEFAULT_CERTIFICATION_ID,
-}: {
-  userMessage: string;
-  conversation: ConversationTurn[];
-  userId: string;
-  certificationId?: string;
-}): Course | undefined {
+export async function resolveRequestedCourse(
+  {
+    userMessage,
+    conversation,
+    userId,
+    certificationId = DEFAULT_CERTIFICATION_ID,
+  }: {
+    userMessage: string;
+    conversation: ConversationTurn[];
+    userId: string;
+    certificationId?: string;
+  },
+  repository: LearningRepository = inMemoryLearningRepository,
+): Promise<Course | undefined> {
   if (isNextCourseRequest(userMessage)) {
-    return getNextRequiredCourse(
+    return repository.getNextRequiredCourse(
       userId,
       certificationId,
     );
   }
 
-  const directMatch = findCourse(userMessage);
+  /*
+   * Enrollment targets stay server-resolved rather than model-selected. Recent
+   * context is consulted only after a direct match so follow-ups such as
+   * "enroll me in that course" can resolve deterministically.
+   */
+  const directMatch = await repository.findCourse(userMessage);
 
   if (directMatch) {
     return directMatch;
@@ -50,5 +56,5 @@ export function resolveRequestedCourse({
     return undefined;
   }
 
-  return findCourse(recentContext);
+  return repository.findCourse(recentContext);
 }

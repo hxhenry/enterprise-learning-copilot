@@ -16,9 +16,21 @@ export function SourceList({ block }: SourceListProps) {
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h3 className="text-sm font-semibold text-slate-900">
-        Retrieved sources
-      </h3>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-cyan-700">
+            RAG grounding
+          </p>
+
+          <h3 className="mt-1 text-sm font-semibold text-slate-900">
+            Grounding evidence
+          </h3>
+        </div>
+
+        <span className="rounded-full bg-cyan-50 px-2.5 py-1 text-xs font-semibold text-cyan-800">
+          {block.sources.length} {block.sources.length === 1 ? "passage" : "passages"}
+        </span>
+      </div>
 
       <ul className="mt-3 space-y-3">
         {block.sources.map((source) => (
@@ -36,7 +48,7 @@ export function SourceList({ block }: SourceListProps) {
               </p>
             </div>
 
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-1 text-xs text-slate-500">
               {source.source} · {source.category}
             </p>
 

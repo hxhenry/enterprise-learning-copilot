@@ -1,18 +1,19 @@
-export type EnrollmentRecord = {
-  actionId: string;
-  userId: string;
-  courseId: string;
-  courseTitle: string;
-  status: "enrolled";
-  approvedBy: string;
-  approvedAt: string;
-};
+import type {
+  CreateEnrollmentInput,
+  EnrollmentRecord,
+  EnrollmentResult,
+} from "@/lib/domain/enrollment";
 
-export type EnrollmentResult = {
-  record: EnrollmentRecord;
-  created: boolean;
-};
+export type {
+  EnrollmentRecord,
+  EnrollmentResult,
+} from "@/lib/domain/enrollment";
 
+/*
+ * Demo-only process state. The checks below express the repository idempotency
+ * contract but are not transactional; a production adapter must enforce both
+ * uniqueness rules in its storage layer.
+ */
 const enrollmentRecords: EnrollmentRecord[] = [];
 
 export function createCourseEnrollment({
@@ -21,13 +22,7 @@ export function createCourseEnrollment({
   courseId,
   courseTitle,
   approvedBy,
-}: {
-  actionId: string;
-  userId: string;
-  courseId: string;
-  courseTitle: string;
-  approvedBy: string;
-}): EnrollmentResult {
+}: CreateEnrollmentInput): EnrollmentResult {
   const existingAction = enrollmentRecords.find(
     (record) => record.actionId === actionId,
   );
@@ -39,6 +34,7 @@ export function createCourseEnrollment({
     };
   }
 
+  // A new action ID can still repeat an enrollment intent already completed.
   const existingEnrollment = enrollmentRecords.find(
     (record) =>
       record.userId === userId &&

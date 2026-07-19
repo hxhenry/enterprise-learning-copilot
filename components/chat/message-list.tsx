@@ -21,28 +21,34 @@ export function MessageList({
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({
-      behavior: "smooth",
+    bottomRef.current?.scrollIntoView?.({
+      behavior: "auto",
+      block: "end",
     });
   }, [messages, status]);
 
   return (
     <div
-      className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-6 md:px-8"
-      aria-live="polite"
+      className="flex min-h-[22rem] max-h-[55dvh] flex-none flex-col gap-4 overflow-y-auto px-4 py-6 md:px-8 lg:min-h-0 lg:max-h-none lg:flex-1"
+      role="log"
+      aria-label="Conversation"
+      aria-relevant="additions"
     >
       {messages.map((message) => {
         const activities = message.activities ?? [];
         const experienceBlocks =
           message.experienceBlocks ?? [];
 
-        const hasStructuredExperience =
-          message.role === "assistant" &&
-          (activities.length > 0 ||
-            experienceBlocks.length > 0);
+        const isAssistant = message.role === "assistant";
 
         return (
           <div key={message.id} className="space-y-3">
+            {isAssistant && activities.length > 0 ? (
+              <div className="max-w-[98%] md:max-w-[88%]">
+                <AgentActivityTimeline activities={activities} />
+              </div>
+            ) : null}
+
             <MessageBubble
               message={message}
               isStreaming={
@@ -50,12 +56,8 @@ export function MessageList({
               }
             />
 
-            {hasStructuredExperience ? (
-              <div className="max-w-[95%] space-y-3 md:max-w-[85%]">
-                <AgentActivityTimeline
-                  activities={activities}
-                />
-
+            {isAssistant && experienceBlocks.length > 0 ? (
+              <div className="max-w-[98%] space-y-3 md:max-w-[88%]">
                 <ExperienceBlockRenderer
                   blocks={experienceBlocks}
                 />
@@ -66,7 +68,11 @@ export function MessageList({
       })}
 
       {status ? (
-        <div className="flex items-center gap-2 text-sm text-slate-500">
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex items-center gap-2 text-sm text-slate-600"
+        >
           <span
             className="h-2 w-2 animate-pulse rounded-full bg-blue-500"
             aria-hidden="true"

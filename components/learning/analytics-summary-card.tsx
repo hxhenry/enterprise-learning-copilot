@@ -33,23 +33,32 @@ export function AnalyticsSummaryCard({
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[680px] text-left text-sm">
+        <table className="w-full min-w-[760px] text-left text-sm">
+          <caption className="sr-only">
+            Certification outcomes and aggregate risk by department
+          </caption>
+
           <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-5 py-3">Department</th>
-              <th className="px-5 py-3">Completion</th>
-              <th className="px-5 py-3">Completed</th>
-              <th className="px-5 py-3">In progress</th>
-              <th className="px-5 py-3">Overdue</th>
-              <th className="px-5 py-3">Risk</th>
+              <th scope="col" className="px-5 py-3">Department</th>
+              <th scope="col" className="px-5 py-3">Total</th>
+              <th scope="col" className="px-5 py-3">Completion</th>
+              <th scope="col" className="px-5 py-3">Completed</th>
+              <th scope="col" className="px-5 py-3">In progress</th>
+              <th scope="col" className="px-5 py-3">Overdue</th>
+              <th scope="col" className="px-5 py-3">Risk</th>
             </tr>
           </thead>
 
           <tbody className="divide-y divide-slate-100">
             {block.statistics.map((statistic) => (
               <tr key={statistic.department}>
-                <td className="px-5 py-4 font-medium text-slate-800">
+                <th scope="row" className="px-5 py-4 font-medium text-slate-800">
                   {statistic.department}
+                </th>
+
+                <td className="px-5 py-4 text-slate-600">
+                  {statistic.totalEmployees}
                 </td>
 
                 <td className="px-5 py-4 text-slate-600">

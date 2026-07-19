@@ -5,11 +5,10 @@ import {
   START,
   StateGraph,
   interrupt,
+  type BaseCheckpointSaver,
   type ConditionalEdgeRouter,
 } from "@langchain/langgraph";
 
-import { completedCourseIdsByUser } from "@/data/mock-learning-data";
-import { createCourseEnrollment } from "@/data/mock-enrollment-data";
 import { learningGraphCheckpointer } from "@/lib/agents/checkpointer";
 import { AGENT_REGISTRY, type AgentId } from "@/lib/agents/registry";
 import { routeLearningRequest } from "@/lib/agents/router";
@@ -23,23 +22,41 @@ import {
   CERTIFICATION_AGENT_PROMPT,
   TUTOR_AGENT_PROMPT,
 } from "@/lib/prompts/learning-copilot";
-import type { AgentEvent, ApprovalRequest } from "@/lib/schemas/events";
+import type {
+  AgentEventReporter,
+  ApprovalRequest,
+} from "@/lib/schemas/events";
 import {
   assertPermission,
   type AuthenticatedActor,
 } from "@/lib/security/authorization";
 import { createAnalyticsTools } from "@/lib/tools/analytics-tools";
 import { createCertificationTools } from "@/lib/tools/certification-tools";
-import { createRagTools } from "@/lib/tools/rag-tools";
+import { createRagToolSession } from "@/lib/tools/rag-tools";
 import { resolveRequestedCourse } from "@/lib/agents/course-resolution";
+import type { LearningGraphRepositories } from "@/lib/repositories/contracts";
+import { inMemoryLearningGraphRepositories } from "@/lib/repositories/in-memory-repositories";
 
-type AgentEventReporter = (event: AgentEvent) => void;
+export type LearningGraphDependencies = {
+  routeRequest: typeof routeLearningRequest;
+  runAgent: typeof runStreamingAgent;
+  resolveCourse: typeof resolveRequestedCourse;
+  checkpointer: BaseCheckpointSaver;
+  repositories: LearningGraphRepositories;
+  createActionId: () => string;
+  now: () => Date;
+};
 
-type CreateLearningGraphOptions = {
+export type CreateLearningGraphOptions = {
   reportEvent: AgentEventReporter;
   abortSignal: AbortSignal;
   actor: AuthenticatedActor;
   runContext: RunContext;
+  dependencies?: Partial<
+    Omit<LearningGraphDependencies, "repositories">
+  > & {
+    repositories?: Partial<LearningGraphRepositories>;
+  };
 };
 
 type RouterDestination = AgentId | "prepareEnrollment";
@@ -71,7 +88,23 @@ export function createLearningGraph({
   abortSignal,
   actor,
   runContext,
+  dependencies,
 }: CreateLearningGraphOptions) {
+  const routeRequest =
+    dependencies?.routeRequest ?? routeLearningRequest;
+  const runAgent = dependencies?.runAgent ?? runStreamingAgent;
+  const resolveCourse =
+    dependencies?.resolveCourse ?? resolveRequestedCourse;
+  const checkpointer =
+    dependencies?.checkpointer ?? learningGraphCheckpointer;
+  const repositories: LearningGraphRepositories = {
+    ...inMemoryLearningGraphRepositories,
+    ...dependencies?.repositories,
+  };
+  const createActionId =
+    dependencies?.createActionId ?? randomUUID;
+  const now = dependencies?.now ?? (() => new Date());
+
   const routerNode: typeof LearningGraphState.Node = async (state) => {
     reportEvent({
       type: "status",
@@ -80,7 +113,7 @@ export function createLearningGraph({
 
     const routerStartedAt = performance.now();
 
-    const decision = await routeLearningRequest(
+    const decision = await routeRequest(
       state.userMessage,
       state.conversation,
       abortSignal,
@@ -109,18 +142,26 @@ export function createLearningGraph({
   };
 
   const tutorNode: typeof LearningGraphState.Node = async (state) => {
-    const answer = await runStreamingAgent({
+    const ragSession = createRagToolSession(
+      reportEvent,
+      repositories.knowledge,
+    );
+    const answer = await runAgent({
       agentId: "tutor",
       agentName: AGENT_REGISTRY.tutor.name,
       systemPrompt: TUTOR_AGENT_PROMPT,
       conversation: state.conversation,
       tools: {
-        ...createRagTools(reportEvent),
+        ...ragSession.tools,
       },
       reportEvent,
       abortSignal,
       runContext,
     });
+
+    if (!abortSignal.aborted) {
+      ragSession.publishCitedSources(answer);
+    }
 
     return {
       finalAnswer: answer,
@@ -134,19 +175,27 @@ export function createLearningGraph({
   };
 
   const certificationNode: typeof LearningGraphState.Node = async (state) => {
-    const answer = await runStreamingAgent({
+    const ragSession = createRagToolSession(
+      reportEvent,
+      repositories.knowledge,
+    );
+    const answer = await runAgent({
       agentId: "certification",
       agentName: AGENT_REGISTRY.certification.name,
       systemPrompt: CERTIFICATION_AGENT_PROMPT,
       conversation: state.conversation,
       tools: {
-        ...createCertificationTools(reportEvent),
-        ...createRagTools(reportEvent),
+        ...createCertificationTools(reportEvent, repositories.learning),
+        ...ragSession.tools,
       },
       reportEvent,
       abortSignal,
       runContext,
     });
+
+    if (!abortSignal.aborted) {
+      ragSession.publishCitedSources(answer);
+    }
 
     return {
       finalAnswer: answer,
@@ -160,13 +209,13 @@ export function createLearningGraph({
   };
 
   const analyticsNode: typeof LearningGraphState.Node = async (state) => {
-    const answer = await runStreamingAgent({
+    const answer = await runAgent({
       agentId: "analytics",
       agentName: AGENT_REGISTRY.analytics.name,
       systemPrompt: ANALYTICS_AGENT_PROMPT,
       conversation: state.conversation,
       tools: {
-        ...createAnalyticsTools(reportEvent),
+        ...createAnalyticsTools(reportEvent, repositories.analytics),
       },
       reportEvent,
       abortSignal,
@@ -187,13 +236,17 @@ export function createLearningGraph({
   const prepareEnrollmentNode: typeof LearningGraphState.Node = async (
     state,
   ) => {
+    // A router/model decision never grants permission to enter a write flow.
     assertPermission(actor, "enrollment:request");
 
-    const course = resolveRequestedCourse({
-      userMessage: state.userMessage,
-      conversation: state.conversation,
-      userId: actor.userId,
-    });
+    const course = await resolveCourse(
+      {
+        userMessage: state.userMessage,
+        conversation: state.conversation,
+        userId: actor.userId,
+      },
+      repositories.learning,
+    );
     if (!course) {
       const answer =
         "I could not identify which course you want to enroll in. Please provide the exact course title.";
@@ -207,6 +260,7 @@ export function createLearningGraph({
         finalAnswer: answer,
         approvalStatus: "rejected",
         pendingEnrollment: null,
+        resolvedEnrollmentActionId: null,
         conversation: [
           {
             role: "assistant",
@@ -217,7 +271,7 @@ export function createLearningGraph({
     }
 
     const completedCourses = new Set(
-      completedCourseIdsByUser[actor.userId] ?? [],
+      await repositories.learning.getCompletedCourseIds(actor.userId),
     );
 
     if (completedCourses.has(course.id)) {
@@ -232,6 +286,7 @@ export function createLearningGraph({
         finalAnswer: answer,
         approvalStatus: "rejected",
         pendingEnrollment: null,
+        resolvedEnrollmentActionId: null,
         conversation: [
           {
             role: "assistant",
@@ -243,12 +298,13 @@ export function createLearningGraph({
 
     return {
       approvalStatus: "pending",
+      resolvedEnrollmentActionId: null,
       pendingEnrollment: {
-        actionId: randomUUID(),
+        actionId: createActionId(),
         userId: actor.userId,
         courseId: course.id,
         courseTitle: course.title,
-        requestedAt: new Date().toISOString(),
+        requestedAt: now().toISOString(),
       },
     };
   };
@@ -281,6 +337,7 @@ export function createLearningGraph({
       throw new Error("The approval response was invalid.");
     }
 
+    // Bind the decision to both the checkpointed action and current actor.
     if (
       response.actionId !== pending.actionId ||
       response.decidedBy !== actor.userId
@@ -298,6 +355,11 @@ export function createLearningGraph({
   const executeEnrollmentNode: typeof LearningGraphState.Node = async (
     state,
   ) => {
+    /*
+     * Re-authorize after resume because a checkpoint can outlive its creating
+     * request. This deterministic node is deliberately not an LLM-callable
+     * write tool.
+     */
     assertPermission(actor, "enrollment:request");
 
     const pending = state.pendingEnrollment;
@@ -316,7 +378,8 @@ export function createLearningGraph({
       message: "Creating the approved enrollment record...",
     });
 
-    const result = createCourseEnrollment({
+    // The checkpointed action ID is the stable idempotency key across retries.
+    const result = await repositories.enrollment.createCourseEnrollment({
       actionId: pending.actionId,
       userId: pending.userId,
       courseId: pending.courseId,
@@ -348,6 +411,8 @@ export function createLearningGraph({
 
     return {
       approvalStatus: "approved",
+      pendingEnrollment: null,
+      resolvedEnrollmentActionId: pending.actionId,
       finalAnswer: message,
       conversation: [
         {
@@ -383,6 +448,8 @@ export function createLearningGraph({
 
     return {
       approvalStatus: "rejected",
+      pendingEnrollment: null,
+      resolvedEnrollmentActionId: pending.actionId,
       finalAnswer: message,
       conversation: [
         {
@@ -453,6 +520,6 @@ export function createLearningGraph({
     .addEdge("rejectEnrollment", END)
 
     .compile({
-      checkpointer: learningGraphCheckpointer,
+      checkpointer,
     });
 }

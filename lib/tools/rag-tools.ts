@@ -2,16 +2,59 @@ import { tool } from "ai";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 
-import { searchCourseKnowledge } from "@/lib/rag/course-knowledge";
-import type { AgentEvent } from "@/lib/schemas/events";
+import type { RetrievedKnowledge } from "@/lib/domain/knowledge";
+import type { AgentEventReporter } from "@/lib/schemas/events";
+import type { KnowledgeRepository } from "@/lib/repositories/contracts";
+import { inMemoryKnowledgeRepository } from "@/lib/repositories/in-memory-repositories";
 
-type AgentEventReporter = (event: AgentEvent) => void;
-
-export function createRagTools(reportEvent: AgentEventReporter) {
+function toSourceExperienceItem(passage: RetrievedKnowledge) {
   return {
+    citationId: passage.citationId,
+    title: passage.title,
+    source: passage.source,
+    category: passage.category,
+    excerpt: passage.content
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 180),
+  };
+}
+
+/** Extracts only the supported inline citation syntax, preserving first use. */
+export function extractCitationIds(answer: string): string[] {
+  const citationIds: string[] = [];
+  const seen = new Set<string>();
+
+  for (const match of answer.matchAll(
+    /\[(S\d+(?:\s*[,;]\s*S\d+)*)\]/g,
+  )) {
+    for (const citationId of match[1]?.match(/S\d+/g) ?? []) {
+      if (!seen.has(citationId)) {
+        seen.add(citationId);
+        citationIds.push(citationId);
+      }
+    }
+  }
+
+  return citationIds;
+}
+
+export function createRagToolSession(
+  reportEvent: AgentEventReporter,
+  repository: KnowledgeRepository = inMemoryKnowledgeRepository,
+) {
+  /*
+   * Repository-local IDs may restart at S1 on every search. Remapping them in
+   * this agent run prevents collisions when the model invokes retrieval more
+   * than once before producing its answer.
+   */
+  const passagesByCitationId = new Map<string, RetrievedKnowledge>();
+  let nextCitationNumber = 1;
+
+  const tools = {
     searchCourseKnowledge: tool({
       description:
-        "Search internal course and certification policy documents. Use this tool when answering questions about course concepts, security topics, assessment policy, retake rules, certification validity, or manager reporting.",
+        "Search the available internal course and certification policy documents. Use this tool for supported course concepts, security topics, assessment policy, retake rules, certification validity, manager reporting, or when the user explicitly asks for internal references. It does not search the web or general React documentation.",
 
       inputSchema: z.object({
         query: z
@@ -38,9 +81,12 @@ export function createRagTools(reportEvent: AgentEventReporter) {
         });
 
         try {
-          const passages = await searchCourseKnowledge(query, limit);
+          const retrievedPassages = await repository.searchCourseKnowledge(
+            query,
+            limit,
+          );
 
-          if (passages.length === 0) {
+          if (retrievedPassages.length === 0) {
             reportEvent({
               type: "tool-result",
               toolName: "searchCourseKnowledge",
@@ -52,9 +98,23 @@ export function createRagTools(reportEvent: AgentEventReporter) {
               query,
               passages: [],
               message:
-                "No relevant information was found in the available documents.",
+                "The internal learning documents do not cover this topic. If you provide a general explanation, clearly label it as model knowledge and do not cite internal sources.",
             };
           }
+
+          const passages = retrievedPassages.map((passage) => {
+            const citationId = `S${nextCitationNumber}`;
+            nextCitationNumber += 1;
+
+            const sessionPassage = {
+              ...passage,
+              citationId,
+            };
+
+            passagesByCitationId.set(citationId, sessionPassage);
+
+            return sessionPassage;
+          });
 
           const uniqueSourceCount = new Set(
             passages.map((passage) => passage.source),
@@ -65,33 +125,16 @@ export function createRagTools(reportEvent: AgentEventReporter) {
             toolName: "searchCourseKnowledge",
             summary: `Found ${passages.length} relevant passages from ${uniqueSourceCount} source document${uniqueSourceCount === 1 ? "" : "s"}.`,
           });
-          
-          reportEvent({
-            type: "experience",
-            block: {
-              id: `sources-${randomUUID()}`,
-              kind: "sources",
-              sources: passages.map((passage) => ({
-                citationId: passage.citationId,
-                title: passage.title,
-                source: passage.source,
-                category: passage.category,
-                excerpt: passage.content
-                  .replace(/\s+/g, " ")
-                  .trim()
-                  .slice(0, 180),
-              })),
-            },
-          });
 
           return {
             found: true,
             query,
             citationInstructions:
-              "When using a passage, cite its citationId in square brackets, such as [S1]. Include a Sources section mapping each citation ID to its title.",
+              "Cite each supported claim inline using its passage citationId in square brackets, such as [S1]. Do not add a separate Sources section because the application renders cited passages as structured evidence.",
             passages,
           };
         } catch (error) {
+          // Provider details stay in server logs; tool output is model-visible.
           console.error("Course knowledge retrieval failed:", error);
 
           reportEvent({
@@ -110,6 +153,34 @@ export function createRagTools(reportEvent: AgentEventReporter) {
       },
     }),
   };
-}
 
-export type RagTools = ReturnType<typeof createRagTools>;
+  return {
+    tools,
+    publishCitedSources(answer: string) {
+      /*
+       * Publication is intentionally deferred until generation completes.
+       * Intersecting answer citations with the run registry removes unused and
+       * fabricated IDs; it validates provenance, not claim-level entailment.
+       */
+      const sources = extractCitationIds(answer)
+        .map((citationId) => passagesByCitationId.get(citationId))
+        .filter(
+          (passage): passage is RetrievedKnowledge => passage !== undefined,
+        )
+        .map(toSourceExperienceItem);
+
+      if (sources.length === 0) {
+        return;
+      }
+
+      reportEvent({
+        type: "experience",
+        block: {
+          id: `sources-${randomUUID()}`,
+          kind: "sources",
+          sources,
+        },
+      });
+    },
+  };
+}

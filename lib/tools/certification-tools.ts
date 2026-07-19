@@ -1,18 +1,14 @@
 import { tool } from "ai";
 import { z } from "zod";
 
-import {
-  completedCourseIdsByUser,
-  findCertification,
-  findCertificationById,
-  findUserById,
-  getCoursesByIds,
-} from "@/data/mock-learning-data";
-import type { AgentEvent } from "@/lib/schemas/events";
+import type { AgentEventReporter } from "@/lib/schemas/events";
+import type { LearningRepository } from "@/lib/repositories/contracts";
+import { inMemoryLearningRepository } from "@/lib/repositories/in-memory-repositories";
 
-type AgentEventReporter = (event: AgentEvent) => void;
-
-export function createCertificationTools(reportEvent: AgentEventReporter) {
+export function createCertificationTools(
+  reportEvent: AgentEventReporter,
+  repository: LearningRepository = inMemoryLearningRepository,
+) {
   return {
     getUserProfile: tool({
       description:
@@ -31,7 +27,7 @@ export function createCertificationTools(reportEvent: AgentEventReporter) {
           message: "Checking the employee profile...",
         });
 
-        const user = findUserById(userId);
+        const user = await repository.findUserById(userId);
 
         if (!user) {
           const result = {
@@ -80,7 +76,7 @@ export function createCertificationTools(reportEvent: AgentEventReporter) {
           message: "Checking completed courses...",
         });
 
-        const user = findUserById(userId);
+        const user = await repository.findUserById(userId);
 
         if (!user) {
           reportEvent({
@@ -96,9 +92,13 @@ export function createCertificationTools(reportEvent: AgentEventReporter) {
           };
         }
 
-        const completedCourseIds = completedCourseIdsByUser[userId] ?? [];
+        const completedCourseIds = await repository.getCompletedCourseIds(
+          userId,
+        );
 
-        const completedCourses = getCoursesByIds(completedCourseIds);
+        const completedCourses = await repository.getCoursesByIds(
+          completedCourseIds,
+        );
 
         reportEvent({
           type: "tool-result",
@@ -136,7 +136,7 @@ export function createCertificationTools(reportEvent: AgentEventReporter) {
           message: "Calculating certification progress...",
         });
 
-        const user = findUserById(userId);
+        const user = await repository.findUserById(userId);
 
         if (!user) {
           reportEvent({
@@ -151,7 +151,9 @@ export function createCertificationTools(reportEvent: AgentEventReporter) {
           };
         }
 
-        const certification = findCertification(certificationQuery);
+        const certification = await repository.findCertification(
+          certificationQuery,
+        );
 
         if (!certification) {
           reportEvent({
@@ -166,12 +168,12 @@ export function createCertificationTools(reportEvent: AgentEventReporter) {
           };
         }
 
-        const requiredCourses = getCoursesByIds(
+        const requiredCourses = await repository.getCoursesByIds(
           certification.requiredCourseIds,
         );
 
         const completedCourseIds = new Set(
-          completedCourseIdsByUser[userId] ?? [],
+          await repository.getCompletedCourseIds(userId),
         );
 
         const completedCourses = requiredCourses.filter((course) =>
@@ -239,7 +241,9 @@ export function createCertificationTools(reportEvent: AgentEventReporter) {
           message: "Retrieving certification requirements...",
         });
 
-        const certification = findCertification(certificationQuery);
+        const certification = await repository.findCertification(
+          certificationQuery,
+        );
 
         if (!certification) {
           reportEvent({
@@ -254,7 +258,7 @@ export function createCertificationTools(reportEvent: AgentEventReporter) {
           };
         }
 
-        const requiredCourses = getCoursesByIds(
+        const requiredCourses = await repository.getCoursesByIds(
           certification.requiredCourseIds,
         );
 
@@ -289,7 +293,9 @@ export function createCertificationTools(reportEvent: AgentEventReporter) {
           message: "Loading available certification courses...",
         });
 
-        const certification = findCertificationById(certificationId);
+        const certification = await repository.findCertificationById(
+          certificationId,
+        );
 
         if (!certification) {
           reportEvent({
@@ -305,7 +311,7 @@ export function createCertificationTools(reportEvent: AgentEventReporter) {
           };
         }
 
-        const certificationCourses = getCoursesByIds(
+        const certificationCourses = await repository.getCoursesByIds(
           certification.requiredCourseIds,
         );
 

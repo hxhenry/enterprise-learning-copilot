@@ -1,18 +1,22 @@
 import { performance } from "node:perf_hooks";
 
 import type { OpenAILanguageModelResponsesOptions } from "@ai-sdk/openai";
-import { stepCountIs, streamText, type ModelMessage, type ToolSet } from "ai";
+import {
+  stepCountIs,
+  streamText,
+  type LanguageModel,
+  type ModelMessage,
+  type ToolSet,
+} from "ai";
 
 import type { AgentId } from "@/lib/agents/registry";
 import type { ConversationTurn } from "@/lib/agents/state";
 import { getLearningModel } from "@/lib/ai/model";
 import { logError, logInfo } from "@/lib/observability/logger";
 import type { RunContext } from "@/lib/observability/run-context";
-import type { AgentEvent } from "@/lib/schemas/events";
+import type { AgentEventReporter } from "@/lib/schemas/events";
 
-type AgentEventReporter = (event: AgentEvent) => void;
-
-type RunStreamingAgentOptions = {
+export type RunStreamingAgentOptions = {
   agentId: AgentId;
   agentName: string;
   systemPrompt: string;
@@ -21,6 +25,7 @@ type RunStreamingAgentOptions = {
   reportEvent: AgentEventReporter;
   abortSignal: AbortSignal;
   runContext: RunContext;
+  model?: LanguageModel;
 };
 
 export async function runStreamingAgent({
@@ -32,6 +37,7 @@ export async function runStreamingAgent({
   reportEvent,
   abortSignal,
   runContext,
+  model = getLearningModel(),
 }: RunStreamingAgentOptions): Promise<string> {
   let providerError: unknown = null;
   let completedStepCount = 0;
@@ -57,7 +63,7 @@ export async function runStreamingAgent({
   }));
 
   const result = streamText({
-    model: getLearningModel(),
+    model,
 
     system: systemPrompt,
 
@@ -65,6 +71,7 @@ export async function runStreamingAgent({
 
     tools,
 
+    // Bound autonomous tool loops even if the model repeatedly selects a tool.
     stopWhen: stepCountIs(6),
 
     maxOutputTokens: 1_200,
@@ -115,6 +122,7 @@ export async function runStreamingAgent({
     },
   });
 
+  // The same text is streamed to the browser and retained for graph state.
   let finalAnswer = "";
 
   for await (const textPart of result.textStream) {
@@ -143,6 +151,7 @@ export async function runStreamingAgent({
     return finalAnswer;
   }
 
+  // Preserve the provider failure instead of masking it as an empty response.
   if (providerError) {
     throw providerError;
   }

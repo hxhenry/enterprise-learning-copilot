@@ -1,9 +1,12 @@
 import react from "@vitejs/plugin-react";
-import tsconfigPaths from "vite-tsconfig-paths";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  plugins: [tsconfigPaths(), react()],
+  plugins: [react()],
+
+  resolve: {
+    tsconfigPaths: true,
+  },
 
   test: {
     environment: "jsdom",
@@ -12,12 +15,14 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
-      include: ["data/**/*.ts", "lib/**/*.ts"],
-      exclude: [
-        "**/*.d.ts",
-        "lib/agents/graph.ts",
-        "lib/agents/run-streaming-agent.ts",
-      ],
+      include: ["app/api/**/*.ts", "data/**/*.ts", "lib/**/*.ts"],
+      exclude: ["**/*.d.ts"],
+      thresholds: {
+        statements: 85,
+        branches: 80,
+        functions: 88,
+        lines: 85,
+      },
     },
   },
 });

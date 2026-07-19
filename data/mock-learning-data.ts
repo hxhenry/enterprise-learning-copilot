@@ -1,25 +1,14 @@
-export type LearningUser = {
-  id: string;
-  name: string;
-  role: string;
-  department: string;
-};
+import type {
+  Certification,
+  Course,
+  LearningUser,
+} from "@/lib/domain/learning";
 
-export type Course = {
-  id: string;
-  title: string;
-  topic: string;
-  level: "beginner" | "intermediate" | "advanced";
-  durationHours: number;
-};
-
-export type Certification = {
-  id: string;
-  name: string;
-  description: string;
-  passingScore: number;
-  requiredCourseIds: string[];
-};
+export type {
+  Certification,
+  Course,
+  LearningUser,
+} from "@/lib/domain/learning";
 
 export const users: LearningUser[] = [
   {

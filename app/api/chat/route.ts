@@ -8,6 +8,11 @@ import { performance } from "node:perf_hooks";
 import { createObservedEventReporter } from "@/lib/observability/event-reporter";
 import { logError, logInfo } from "@/lib/observability/logger";
 import { createRunContext } from "@/lib/observability/run-context";
+import { encodeAgentEvent } from "@/lib/streaming/agent-event-stream";
+import {
+  getServerEnvironment,
+  ServerEnvironmentError,
+} from "@/lib/config/server-environment";
 
 export const runtime = "nodejs";
 
@@ -15,12 +20,6 @@ type ChatRequest = {
   message?: unknown;
   threadId?: unknown;
 };
-
-const encoder = new TextEncoder();
-
-function encodeEvent(event: AgentEvent): Uint8Array {
-  return encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
-}
 
 export async function POST(request: Request): Promise<Response> {
   let body: ChatRequest;
@@ -64,9 +63,16 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  if (!process.env.OPENAI_API_KEY?.trim()) {
+  try {
+    getServerEnvironment();
+  } catch (error) {
+    if (!(error instanceof ServerEnvironmentError)) {
+      throw error;
+    }
+
     return Response.json(
       {
+        code: "SERVER_CONFIGURATION_ERROR",
         error: "The server is missing its OpenAI API configuration.",
       },
       {
@@ -91,7 +97,7 @@ export async function POST(request: Request): Promise<Response> {
         }
 
         try {
-          controller.enqueue(encodeEvent(event));
+          controller.enqueue(encodeAgentEvent(event));
           return true;
         } catch {
           isClosed = true;
@@ -153,6 +159,7 @@ export async function POST(request: Request): Promise<Response> {
             routingReason: "",
             requestKind: "answer",
             pendingEnrollment: null,
+            resolvedEnrollmentActionId: null,
             approvalStatus: "not-required",
             finalAnswer: "",
           },
@@ -169,6 +176,10 @@ export async function POST(request: Request): Promise<Response> {
         }
 
         if (isInterrupted(result)) {
+          /*
+           * `done` terminates this HTTP stream only. LangGraph keeps the thread
+           * checkpoint paused so the approval route can resume the same action.
+           */
           const pendingInterrupt = result[INTERRUPT][0];
           const approvalRequest = pendingInterrupt?.value;
 
@@ -216,7 +227,9 @@ export async function POST(request: Request): Promise<Response> {
 
           reportEvent({
             type: "error",
+            code: "WORKFLOW_EXECUTION_FAILED",
             message: "The learning workflow could not complete the request.",
+            retryable: false,
           });
         }
       } finally {
@@ -230,6 +243,7 @@ export async function POST(request: Request): Promise<Response> {
       "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
       "X-Accel-Buffering": "no",
+      "X-Content-Type-Options": "nosniff",
       "X-Request-Id": runContext.requestId,
     },
   });

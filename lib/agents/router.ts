@@ -1,5 +1,5 @@
 import type { OpenAILanguageModelResponsesOptions } from "@ai-sdk/openai";
-import { generateText, Output } from "ai";
+import { generateText, Output, type LanguageModel } from "ai";
 import { z } from "zod";
 
 import {
@@ -33,7 +33,13 @@ export async function routeLearningRequest(
   userMessage: string,
   conversation: ConversationTurn[],
   abortSignal: AbortSignal,
+  model: LanguageModel = getLearningModel(),
 ): Promise<RouterDecision> {
+  /*
+   * The current user turn is supplied separately below. Excluding it here
+   * avoids duplicating the request, while the six-turn window bounds routing
+   * cost and limits stale context from influencing the decision.
+   */
   const previousConversation = conversation
     .slice(0, -1)
     .slice(-6)
@@ -41,7 +47,7 @@ export async function routeLearningRequest(
     .join("\n");
 
   const { output } = await generateText({
-    model: getLearningModel(),
+    model,
 
     system: buildRouterSystemPrompt(getAgentCatalogForPrompt()),
 

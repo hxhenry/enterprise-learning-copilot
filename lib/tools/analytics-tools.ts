@@ -1,12 +1,14 @@
 import { tool } from "ai";
 import { z } from "zod";
 
-import { getCertificationStats } from "@/data/mock-analytics-data";
-import type { AgentEvent } from "@/lib/schemas/events";
+import type { AgentEventReporter } from "@/lib/schemas/events";
+import type { AnalyticsRepository } from "@/lib/repositories/contracts";
+import { inMemoryAnalyticsRepository } from "@/lib/repositories/in-memory-repositories";
 
-type AgentEventReporter = (event: AgentEvent) => void;
-
-export function createAnalyticsTools(reportEvent: AgentEventReporter) {
+export function createAnalyticsTools(
+  reportEvent: AgentEventReporter,
+  repository: AnalyticsRepository = inMemoryAnalyticsRepository,
+) {
   return {
     getDepartmentCertificationStats: tool({
       description:
@@ -30,7 +32,9 @@ export function createAnalyticsTools(reportEvent: AgentEventReporter) {
             : "Loading certification analytics for all departments...",
         });
 
-        const statistics = getCertificationStats(department);
+        const statistics = await repository.getCertificationStats(
+          department,
+        );
 
         if (statistics.length === 0) {
           reportEvent({

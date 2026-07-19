@@ -30,6 +30,7 @@ export type PendingEnrollment = z.infer<
 export const LearningGraphState = new StateSchema({
   userMessage: z.string().default(""),
 
+  // Nodes return only new turns; the reducer appends and bounds stored context.
   conversation: new ReducedValue(
     z
       .array(ConversationTurnSchema)
@@ -58,6 +59,11 @@ export const LearningGraphState = new StateSchema({
     .default("answer"),
 
   pendingEnrollment: PendingEnrollmentSchema
+    .nullable()
+    .default(null),
+
+  resolvedEnrollmentActionId: z
+    .string()
     .nullable()
     .default(null),
 
