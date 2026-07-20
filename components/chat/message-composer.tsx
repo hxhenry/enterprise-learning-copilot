@@ -1,4 +1,4 @@
-import type { FormEvent, RefObject } from "react";
+import type { SyntheticEvent, RefObject } from "react";
 
 type MessageComposerProps = {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
@@ -19,7 +19,7 @@ export function MessageComposer({
   onSubmit,
   onStop,
 }: MessageComposerProps) {
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!isStreaming && !isApprovalPending) {
