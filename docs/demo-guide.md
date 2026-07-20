@@ -147,6 +147,10 @@ Choose **Approve** for the clearest happy path. If the same completed action is
 submitted again, checkpoint and adapter checks prevent a second enrollment
 inside the current process.
 
+For a fail-closed check, request an unavailable title such as **OOP Design
+System**. The server should report that it is not in the course catalog and must
+not reuse a course mentioned earlier in the conversation.
+
 ## Five-minute talk track
 
 If time is limited, use this structure:

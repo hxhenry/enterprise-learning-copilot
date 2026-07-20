@@ -249,7 +249,7 @@ export function createLearningGraph({
     );
     if (!course) {
       const answer =
-        "I could not identify which course you want to enroll in. Please provide the exact course title.";
+        "I could not find that course in the available course catalog. Please provide an exact available course title.";
 
       reportEvent({
         type: "token",

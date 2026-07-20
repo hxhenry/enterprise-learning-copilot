@@ -233,6 +233,10 @@ Enrollment is kept outside the model-callable write-tool set. The server owns
 course resolution, permission checks, action IDs, approval validation, and the
 write operation.
 
+Course resolution fails closed for writes. An explicit unknown title does not
+fall back to older conversation history; history is consulted only for a clear
+reference such as “that course,” using the immediately preceding turn.
+
 ```text
 Enrollment request
         |

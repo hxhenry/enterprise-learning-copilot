@@ -251,6 +251,61 @@ describe("learning graph integration", () => {
     expect(sourceIndex).toBeGreaterThan(tokenIndex);
   });
 
+  it("rejects an unknown explicit course instead of selecting stale context", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    const message = "Help me to enroll OOP desgin system.";
+    const events: AgentEventPayload[] = [];
+    const graph = createLearningGraph({
+      actor,
+      abortSignal: new AbortController().signal,
+      reportEvent: (event) => events.push(event),
+      runContext: {
+        requestId: "request-unknown-course",
+        agentRunId: "run-unknown-course",
+        threadId: "thread-unknown-course",
+        operation: "chat",
+      },
+      dependencies: {
+        routeRequest: async () => ({
+          agentId: "certification",
+          requestKind: "enrollment",
+          reason: "The user requested enrollment.",
+        }),
+        checkpointer: new MemorySaver(),
+      },
+    });
+
+    const result = await graph.invoke(
+      {
+        ...createInitialState(message),
+        conversation: [
+          {
+            role: "assistant",
+            content: "You completed Cloud Security Fundamentals.",
+          },
+          {
+            role: "user",
+            content: message,
+          },
+        ],
+      },
+      createConfig("thread-unknown-course"),
+    );
+
+    expect(isInterrupted(result)).toBe(false);
+    expect(result.finalAnswer).toContain(
+      "available course catalog",
+    );
+    expect(result.finalAnswer).not.toContain(
+      "already completed Cloud Security Fundamentals",
+    );
+    expect(result.pendingEnrollment).toBeNull();
+    expect(
+      events.some((event) => event.type === "approval-resolved"),
+    ).toBe(false);
+  });
+
   it("interrupts enrollment and resumes the same checkpoint exactly once", async () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
 
